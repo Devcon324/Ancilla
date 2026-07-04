@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jetson-voice-assistant"
+version = "0.1.0"
+description = "Local-first voice assistant for Windows development and Jetson Orin Nano deployment"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy",
+  "python-dotenv",
+  "requests",
+  "sounddevice",
+  "scipy",
+  "torch",
+  "torchaudio",
+  "openwakeword",
+  "piper-tts>=1.4.2",
+  "onnxruntime>=1.27.0",
+]
+
+[project.scripts]
+jetson-assistant = "jetson_assistant.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
