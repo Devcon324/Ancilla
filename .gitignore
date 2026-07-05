@@ -1,4 +1,7 @@
-/models
+*.onnx
+*.onnx.json
+*.gguf
+*.en.bin
 .github/*
 defaults.json
 

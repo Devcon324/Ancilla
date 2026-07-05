@@ -3,6 +3,7 @@ Pipes text through Piper and plays the resulting audio through sounddevice.
 Uses in-process PiperVoice (cached) to avoid ~3s subprocess spawn per utterance.
 """
 import logging
+import queue
 import subprocess
 import threading
 from collections.abc import Iterator
@@ -88,47 +89,80 @@ def _synthesize(text: str) -> tuple[bytes, int]:
     return raw_pcm, _piper_sample_rate
 
 
-def _play_pcm_blocking(raw_pcm: bytes, sample_rate: int) -> bool:
-    """Play PCM audio. Returns False if stopped early."""
-    if not raw_pcm or _stop_event.is_set():
-        return False
+def _output_sample_rate() -> int:
+    """Playback rate for the whole utterance (one open stream reused for it)."""
+    voice = _ensure_voice()
+    if _use_subprocess or voice is None:
+        return 22050
+    return _piper_sample_rate
+
+
+def _write_blocking(stream, raw_pcm: bytes) -> bool:
+    """Write PCM to an open stream in blocks. Returns False if stopped early."""
+    if not raw_pcm:
+        return True
     audio = np.frombuffer(raw_pcm, dtype=np.int16).astype(np.float32) / 32768.0
     block = 2048
-    with sd.OutputStream(
-        samplerate=sample_rate,
-        device=SPEAKER_DEVICE,
-        channels=1,
-        dtype="float32",
-    ) as stream:
-        for i in range(0, len(audio), block):
-            if _stop_event.is_set():
-                return False
-            stream.write(audio[i : i + block])
+    for i in range(0, len(audio), block):
+        if _stop_event.is_set():
+            return False
+        stream.write(audio[i : i + block])
     return True
-
-
-def speak(text: str) -> None:
-    """Speak a single block of text (blocking unless stop() is called)."""
-    with _play_lock:
-        _stop_event.clear()
-        raw_pcm, rate = _synthesize(text)
-        _play_pcm_blocking(raw_pcm, rate)
 
 
 def speak_stream(chunks: Iterator[str]) -> bool:
     """
-    Speak sentence chunks as they arrive. Returns True if completed,
-    False if stop() interrupted playback.
+    Speak sentence chunks as they arrive, overlapping synthesis of the next
+    sentence with playback of the current one on a single reused output stream.
+    Returns True if completed, False if stop() interrupted playback.
     """
     with _play_lock:
         _stop_event.clear()
-        for chunk in chunks:
-            if _stop_event.is_set():
-                return False
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-            raw_pcm, rate = _synthesize(chunk)
-            if not _play_pcm_blocking(raw_pcm, rate):
-                return False
-        return True
+        rate = _output_sample_rate()
+
+        # Small buffer: synthesize ahead by up to 2 sentences while playing.
+        pcm_queue: queue.Queue = queue.Queue(maxsize=2)
+
+        def _produce() -> None:
+            try:
+                for chunk in chunks:
+                    if _stop_event.is_set():
+                        break
+                    text = chunk.strip()
+                    if not text:
+                        continue
+                    raw_pcm, _ = _synthesize(text)
+                    if _stop_event.is_set():
+                        break
+                    pcm_queue.put(raw_pcm)
+            finally:
+                pcm_queue.put(None)  # sentinel: no more audio
+
+        producer = threading.Thread(target=_produce, daemon=True)
+        producer.start()
+
+        completed = True
+        with sd.OutputStream(
+            samplerate=rate,
+            device=SPEAKER_DEVICE,
+            channels=1,
+            dtype="float32",
+        ) as stream:
+            while True:
+                raw_pcm = pcm_queue.get()
+                if raw_pcm is None:
+                    break
+                if _stop_event.is_set() or not _write_blocking(stream, raw_pcm):
+                    completed = False
+                    break
+
+        if not completed:
+            # Unblock a producer that may be parked on a full queue, then wait.
+            _stop_event.set()
+            try:
+                while pcm_queue.get_nowait() is not None:
+                    pass
+            except queue.Empty:
+                pass
+        producer.join(timeout=2.0)
+        return completed

@@ -66,24 +66,6 @@ def _chat_payload(messages: list[dict], *, max_tokens: int = 150, stream: bool =
     return payload
 
 
-def ask(
-    user_text: str,
-    context: str | None = None,
-    history: list[dict] | None = None,
-) -> str:
-    """Single-shot reply. context: pre-fetched factual data to phrase naturally."""
-    try:
-        response = requests.post(
-            LLAMA_SERVER_URL,
-            json=_chat_payload(_build_messages(user_text, context, history)),
-            timeout=20,
-        )
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"].strip()
-    except requests.RequestException:
-        return "I'm having trouble connecting to my brain right now."
-
-
 def select_tool(user_text: str, history: list[dict] | None = None) -> str:
     """Returns 'web_search' or 'answer'."""
     messages: list[dict] = [{"role": "system", "content": TOOL_SELECT_PROMPT}]

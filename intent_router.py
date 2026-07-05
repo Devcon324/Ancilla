@@ -13,13 +13,9 @@ from zoneinfo import ZoneInfo
 from config import TIMEZONE, TIME_FORMAT
 from log_fmt import info as log_line
 from services import weather_client, store_hours_client, music_client, llm_client, search_client
+from services.store_hours_client import FILLER_RE as _STORE_FILLER
 
 log = logging.getLogger("assistant.router")
-
-_STORE_FILLER = re.compile(
-    r"\b(today|tonight|tomorrow|right now|near me|currently)\b|^the\s+",
-    re.IGNORECASE,
-)
 
 # (pattern, intent, capture_group_index) — more specific patterns first
 _STORE_INTENT_PATTERNS: list[tuple[re.Pattern[str], str, int]] = [
@@ -113,12 +109,6 @@ def allows_barge_in(user_text: str) -> bool:
     if _extract_store_and_intent(text):
         return False
     return True
-
-
-def handle(user_text: str) -> str:
-    """Return a complete spoken reply (non-streaming convenience wrapper)."""
-    chunks = list(iter_reply(user_text))
-    return " ".join(chunks) if chunks else "I didn't catch that."
 
 
 def iter_reply(

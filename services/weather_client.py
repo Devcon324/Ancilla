@@ -5,8 +5,6 @@ OpenWeatherMap later if you want more detail (alerts, radar, etc).
 """
 import math
 
-import requests
-
 from config import (
     WEATHER_LAT,
     WEATHER_LON,
@@ -16,6 +14,7 @@ from config import (
     location_weather_label,
     default_location_geocode_query,
 )
+from services.http import SESSION
 
 NO_DEFAULT_LOCATION_MSG = (
     "You don't have a default location set. "
@@ -72,7 +71,7 @@ def _fetch_forecast(lat: float, lon: float, location_name: str) -> str:
     wind_api = _WIND_API_UNITS.get(WIND_UNIT, "kmh")
     temp_symbol = _TEMP_SYMBOLS.get(TEMPERATURE_UNIT, "\u00b0C")
 
-    resp = requests.get(
+    resp = SESSION.get(
         "https://api.open-meteo.com/v1/forecast",
         params={
             "latitude": lat,
@@ -120,7 +119,7 @@ def _parse_place(place: str) -> tuple[str, str | None]:
 
 
 def _geocode_results(query: str) -> list[dict]:
-    resp = requests.get(
+    resp = SESSION.get(
         "https://geocoding-api.open-meteo.com/v1/search",
         params={"name": query, "count": 100, "language": "en", "format": "json"},
         timeout=5,
@@ -129,7 +128,8 @@ def _geocode_results(query: str) -> list[dict]:
     return resp.json().get("results") or []
 
 
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in km (shared by store lookup and geocoding)."""
     r = 6_371
     p1, p2 = math.radians(lat1), math.radians(lat2)
     dlat = math.radians(lat2 - lat1)
@@ -222,7 +222,7 @@ def _pick_result_near(
 
     return min(
         candidates,
-        key=lambda hit: _haversine_km(
+        key=lambda hit: haversine_km(
             home_lat, home_lon, hit["latitude"], hit["longitude"]
         ),
     )
@@ -305,8 +305,3 @@ def get_weather_for(place: str | None = None) -> str:
                 return _fetch_forecast(lat, lon, location_name)
             return f"I couldn't find a location matching '{place}'."
     return _default_weather()
-
-
-def get_current_weather() -> str:
-    """Backward-compatible alias using the configured default location."""
-    return get_weather_for(None)

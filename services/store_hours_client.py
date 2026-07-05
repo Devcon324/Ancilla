@@ -9,6 +9,7 @@ import math
 import re
 import time
 from datetime import datetime, timedelta
+from functools import lru_cache
 from zoneinfo import ZoneInfo
 
 import requests
@@ -28,6 +29,7 @@ from config import (
     default_location_geocode_query,
 )
 from services import weather_client
+from services.http import SESSION
 from log_fmt import info as log_line, warning as log_warn
 
 log = logging.getLogger("assistant.store")
@@ -49,7 +51,8 @@ NO_DEFAULT_LOCATION_MSG = (
 )
 
 _LOCATION_SPLIT = re.compile(r"\s+(?:in|at|near)\s+", re.IGNORECASE)
-_FILLER = re.compile(
+# Shared with intent_router so store text is cleaned identically on both sides.
+FILLER_RE = re.compile(
     r"\b(today|tonight|tomorrow|right now|near me|currently)\b|^the\s+",
     re.IGNORECASE,
 )
@@ -71,7 +74,7 @@ def is_store_error(message: str) -> bool:
 
 def _clean(text: str) -> str:
     text = text.strip().rstrip("?.!,")
-    return _FILLER.sub("", text).strip()
+    return FILLER_RE.sub("", text).strip()
 
 
 def _split_store_location(store_query: str) -> tuple[str, str | None]:
@@ -204,12 +207,7 @@ def _resolve_store_location(hit: dict) -> str | None:
 
 
 def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6_371_000
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlon / 2) ** 2
-    return 2 * r * math.asin(math.sqrt(a))
+    return weather_client.haversine_km(lat1, lon1, lat2, lon2) * 1000
 
 
 def _element_coords(element: dict) -> tuple[float, float] | None:
@@ -255,7 +253,7 @@ def _name_matches(store_lower: str, name: str | None, display: str) -> bool:
 
 def _reverse_geocode_address(lat: float, lon: float) -> dict:
     try:
-        response = requests.get(
+        response = SESSION.get(
             NOMINATIM_REVERSE_URL,
             params={"lat": lat, "lon": lon, "format": "json", "addressdetails": 1},
             headers={"User-Agent": USER_AGENT},
@@ -267,15 +265,17 @@ def _reverse_geocode_address(lat: float, lon: float) -> dict:
         return {}
 
 
-def _home_area_places(lat: float, lon: float) -> list[str]:
-    """Place names to bias store search near home."""
+@lru_cache(maxsize=8)
+def _home_area_places_cached(lat_key: float, lon_key: float) -> tuple[str, ...]:
+    """Home doesn't move, so its area names (and the reverse-geocode HTTP call)
+    are memoized per rounded coordinate."""
     places: list[str] = []
     if LOCATION_CITY and LOCATION_PROVINCE_OR_STATE:
         places.append(f"{LOCATION_CITY}, {LOCATION_PROVINCE_OR_STATE}")
     elif LOCATION_CITY:
         places.append(LOCATION_CITY)
 
-    addr = _reverse_geocode_address(lat, lon)
+    addr = _reverse_geocode_address(lat_key, lon_key)
     province = addr.get("state") or LOCATION_PROVINCE_OR_STATE or ""
     for key in ("town", "city", "municipality", "county"):
         name = addr.get(key)
@@ -285,7 +285,12 @@ def _home_area_places(lat: float, lon: float) -> list[str]:
         if label not in places:
             places.append(label)
 
-    return places
+    return tuple(places)
+
+
+def _home_area_places(lat: float, lon: float) -> list[str]:
+    """Place names to bias store search near home (~110m rounding for cache hits)."""
+    return list(_home_area_places_cached(round(lat, 3), round(lon, 3)))
 
 
 def _pick_nearest_hit(
@@ -382,7 +387,10 @@ def _nominatim_queries(store_name: str, place_label: str, lat: float, lon: float
         if key not in seen:
             seen.add(key)
             unique.append(q)
-    return unique[:8]
+    # The search loop stops as soon as a viewbox-bounded query yields a match
+    # with hours (or a city match), so the common case is 1-2 requests; the cap
+    # just bounds the worst case.
+    return unique[:5]
 
 
 def _nominatim_search(
@@ -404,7 +412,7 @@ def _nominatim_search(
         log_line(log, "Store", f"Nominatim {query!r} within {radius_km:.0f}km of {place_label}")
         t0 = time.perf_counter()
         try:
-            response = requests.get(
+            response = SESSION.get(
                 NOMINATIM_URL,
                 params={
                     "q": query,
@@ -459,7 +467,7 @@ def _overpass_search(
     query = f"""[out:json][timeout:{OVERPASS_QUERY_TIMEOUT}];
 nwr["name"~"{pattern}",i](around:{radius_m},{lat},{lon});
 out center tags 20;"""
-    response = requests.post(
+    response = SESSION.post(
         endpoint,
         data={"data": query},
         headers={"User-Agent": USER_AGENT},
@@ -657,11 +665,11 @@ def _google_find_store(
     log_line(log, "Store", f"Google Places {query!r} within {radius_km:.0f}km of {place_label}")
     t0 = time.perf_counter()
     try:
-        response = requests.post(
+        response = SESSION.post(
             GOOGLE_PLACES_SEARCH_URL,
-            headers={
-                "Content-Type": "application/json",
-                "X-Goog-Api-Key": GOOGLE_PLACES_API_KEY,
+        headers={
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": GOOGLE_PLACES_API_KEY,
                 "X-Goog-FieldMask": (
                     "places.displayName,places.location,places.currentOpeningHours,"
                     "places.addressComponents"
@@ -756,7 +764,7 @@ def _reply_status_google(name: str, gh: dict, now: datetime) -> str:
         if nxt is None:
             return f"{name} is closed right now."
         return f"{name} is closed right now. It opens {_when_phrase(nxt, now)}."
-    return f"I found {name}, but don't have hours info for it right now."
+        return f"I found {name}, but don't have hours info for it right now."
 
 
 def _find_store(
@@ -939,8 +947,3 @@ def store_hours(store_name: str, intent: str = "status") -> str:
     if intent == "hours":
         return _reply_status(labeled_name, oh, now, hours_expr)
     return _reply_status(labeled_name, oh, now, hours_expr)
-
-
-def is_store_open(store_query: str) -> str:
-    """Backward-compatible alias for status intent."""
-    return store_hours(store_query, intent="status")

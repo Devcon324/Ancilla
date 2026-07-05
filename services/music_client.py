@@ -11,9 +11,8 @@ import random
 import string
 import subprocess
 
-import requests
-
 from config import NAVIDROME_URL, NAVIDROME_USER, NAVIDROME_PASS
+from services.http import SESSION
 
 _player_process = None
 
@@ -32,7 +31,7 @@ def _auth_params():
 
 
 def search_track(query: str) -> dict | None:
-    resp = requests.get(
+    resp = SESSION.get(
         f"{NAVIDROME_URL}/rest/search3", params={**_auth_params(), "query": query}, timeout=5
     )
     resp.raise_for_status()
