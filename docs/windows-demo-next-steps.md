@@ -60,7 +60,7 @@ All commands below assume you are in that folder.
 
 ```powershell
 uv sync
-copy .env.config .env
+copy .env.example .env
 ```
 
 Edit `.env` with your real paths. On this machine that means:
@@ -70,7 +70,7 @@ Edit `.env` with your real paths. On this machine that means:
 
 Leave `ASSISTANT_MIC_DEVICE` and `ASSISTANT_SPEAKER_DEVICE` blank to use Windows defaults.
 
-See [.env.config](../.env.config) for all available variables.
+See [.env.example](../.env.example) for all available variables.
 
 ## Step 4: Configure Piper
 
@@ -131,7 +131,7 @@ Terminal 3 (from repo root):
 
 ```powershell
 cd D:\GitHub\jetson-nano-jarvis
-uv run python -c "import main; main.startup_check()"
+uv run python -c "from jetson_assistant.main import startup_check; startup_check()"
 ```
 
 This reports:
@@ -184,7 +184,7 @@ Goes to the local LLM. If llama-server is down, general questions fail.
 
 ### Store hours
 
-Store hours use OpenStreetMap (Overpass). Set home location in `defaults.json`.
+Store hours use OpenStreetMap (Overpass). Set home location in `config/defaults.json`.
 
 - [Google Cloud Console](https://console.cloud.google.com/)
 - [Places API documentation](https://developers.google.com/maps/documentation/places/web-service)
@@ -246,8 +246,8 @@ For a custom wake word later: [openWakeWord](https://github.com/dscripka/openWak
 ## Quick success checklist
 
 - `uv sync` finishes successfully.
-- `.env` copied from `.env.config` and paths filled in.
-- `uv run python -c "import main; main.startup_check()"` passes.
+- `.env` copied from `.env.example` and paths filled in.
+- `uv run python -c "from jetson_assistant.main import startup_check; startup_check()"` passes.
 - `whisper-server` and `llama-server` are running.
 - Piper voice configured in `.env`.
 - `uv run jetson-assistant` starts and waits for the wake word.

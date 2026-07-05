@@ -4,10 +4,9 @@ A local-first Alexa replacement: wake word → STT → hybrid intent routing
 (time / weather / store hours / music / web search / general chat) → streaming TTS,
 with barge-in support to interrupt mid-response.
 
-The assistant code lives in the root-level [audio/](audio) and
-[services/](services) packages, with the launcher entrypoint in
-[src/jetson_assistant/cli.py](src/jetson_assistant/cli.py). The main runtime is
-still the root-level Python modules plus the `jetson-assistant` console script.
+The assistant package lives under [src/jetson_assistant/](src/jetson_assistant/)
+(`audio/`, `services/`, routing, and the main loop). Run it with the
+`jetson-assistant` console script or `uv run jetson-assistant`.
 
 This project already includes `piper-tts`, `sounddevice`, and the other runtime
 Python dependencies in [pyproject.toml](pyproject.toml). After `uv sync`, you
@@ -18,16 +17,16 @@ The wake word phrase is **"hey jarvis"** (openWakeWord built-in model `hey_jarvi
 ## Architecture
 
 ```text
-Mic input ─▶ audio/wake_word.py (preloaded model, always listening)
+Mic input ─▶ jetson_assistant/audio/wake_word.py (preloaded model, always listening)
                 │ wake word detected
                 ▼
-      audio/capture.py (VAD-based recording of your utterance)
+      jetson_assistant/audio/capture.py (VAD-based recording of your utterance)
                 │
                 ▼
-    services/stt_client.py ──▶ whisper-server (whisper.cpp, port 8080)
+    jetson_assistant/services/stt_client.py ──▶ whisper-server (whisper.cpp, port 8080)
                 │ text
                 ▼
-         intent_router.py (hybrid routing)
+         jetson_assistant/intent_router.py (hybrid routing)
             ├─ "what time" ─────────────▶ local clock (instant)
             ├─ "weather in X" ───────────▶ Open-Meteo geocode + forecast ──┐
             ├─ "is X open" ──────────────▶ Google Places ──────────────────┤
@@ -36,11 +35,11 @@ Mic input ─▶ audio/wake_word.py (preloaded model, always listening)
                                     web_search ──▶ ddgs ───────────────────┤
                                     answer ────────────────────────────────┘ │
                                                            ▼ ▼
-                                                   services/llm_client.py ──▶ llama-server
+                                                   jetson_assistant/services/llm_client.py ──▶ llama-server
                                                      (/v1/chat/completions, streaming)
                 │ spoken reply (sentence-chunked)
                 ▼
-         services/tts_client.py ──▶ Piper ──▶ speaker
+         jetson_assistant/services/tts_client.py ──▶ Piper ──▶ speaker
                 │ (concurrent wake-word listener for barge-in)
                 ▼
          Say "hey jarvis" mid-response to interrupt and ask a new question
@@ -60,13 +59,12 @@ step-by-step guide. Summary:
 
 ```powershell
 uv sync
-copy .env.config .env
+copy .env.example .env
 ```
 
 Edit `.env` with your local paths (Piper voice, optional audio device overrides).
-Edit [defaults.json](defaults.json) for location, timezone, assistant name, and units
-(copy from [defaults.example.json](defaults.example.json) if needed — the example lists
-every allowed option for each setting).
+Copy [config/defaults.example.json](config/defaults.example.json) to
+`config/defaults.json` for location, timezone, assistant name, and units.
 
 **2. Download and install external tools** (not managed by `uv`):
 
@@ -88,7 +86,7 @@ D:\Applications\llama.cpp\llama-server.exe -m models\llm\qwen2.5-3b-instruct-q4_
 
 # Terminal 3 — assistant
 cd D:\GitHub\jetson-nano-jarvis
-uv run python -c "import main; main.startup_check()"
+uv run python -c "from jetson_assistant.main import startup_check; startup_check()"
 uv run jetson-assistant
 ```
 
@@ -96,22 +94,22 @@ uv run jetson-assistant
 
 Configuration is split between two files:
 
-- **[defaults.json](defaults.json)** — location, timezone, assistant name, units
-- **[.env](.env)** — secrets, local paths, machine-specific overrides (copy from [.env.config](.env.config))
+- **[config/defaults.json](config/defaults.json)** — location, timezone, assistant name, units (copy from [config/defaults.example.json](config/defaults.example.json))
+- **[.env](.env)** — secrets, local paths, machine-specific overrides (copy from [.env.example](.env.example))
 
-Env vars override `defaults.json` when both define the same setting. Do not
-edit `config.py` for local paths or API keys.
+Env vars override `config/defaults.json` when both define the same setting. Do not
+edit `src/jetson_assistant/config.py` for local paths or API keys.
 
 ## Next Steps
 
 Before the assistant can answer real requests, you still need to set up a few
 things.
 
-1. No API key is needed for weather or web search. [services/weather_client.py](services/weather_client.py)
+1. No API key is needed for weather or web search. [src/jetson_assistant/services/weather_client.py](src/jetson_assistant/services/weather_client.py)
   uses Open-Meteo with geocoding (ask "what's the weather in Berlin").
-  [services/search_client.py](services/search_client.py) uses DuckDuckGo via `ddgs` for live lookups.
+  [src/jetson_assistant/services/search_client.py](src/jetson_assistant/services/search_client.py) uses DuckDuckGo via `ddgs` for live lookups.
 2. Store-hours lookup uses free OpenStreetMap data via Overpass — no API key.
-  Set your home location in `defaults.json` (city or lat/lon) so the assistant
+  Set your home location in `config/defaults.json` (city or lat/lon) so the assistant
   can find the nearest store. Tune search radius with `STORE_SEARCH_RADIUS_KM` in `.env`.
 3. Music playback needs a reachable Navidrome instance and valid
   `NAVIDROME_USER` / `NAVIDROME_PASS` values in `.env`.
@@ -175,7 +173,7 @@ uv run jetson-assistant
   --host 127.0.0.1 --port 8081 --n-gpu-layers 999 --ctx-size 2048
 
 # Terminal 3
-python3 main.py
+uv run jetson-assistant
 ```
 
 Eventually wrap the first two in systemd services so the whole thing survives
@@ -186,7 +184,7 @@ a reboot without you SSHing in.
 - **Weather (place-aware), clock, store hours, web search, intent routing, streaming TTS,
   barge-in, STT, wake word, VAD**: functional code, should work close to as-is.
 - **Store hours (OSM / Overpass)**: free, no API key. Needs a default location
-  in `defaults.json` for nearest-store lookup. Ask "when will Canadian Tire
+  in `config/defaults.json` for nearest-store lookup. Ask "when will Canadian Tire
   close today", "is Walmart open", etc.
 - **Music / Navidrome**: needs a reachable Navidrome instance and valid
   `NAVIDROME_USER` / `NAVIDROME_PASS` values in `.env`, plus `mpv` on PATH.

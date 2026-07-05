@@ -3,6 +3,7 @@
 *.gguf
 *.en.bin
 .github/*
+config/defaults.json
 defaults.json
 
 # Byte-compiled / optimized / DLL files

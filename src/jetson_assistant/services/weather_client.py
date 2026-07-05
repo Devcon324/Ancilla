@@ -5,7 +5,7 @@ OpenWeatherMap later if you want more detail (alerts, radar, etc).
 """
 import math
 
-from config import (
+from jetson_assistant.config import (
     WEATHER_LAT,
     WEATHER_LON,
     TEMPERATURE_UNIT,
@@ -14,7 +14,7 @@ from config import (
     location_weather_label,
     default_location_geocode_query,
 )
-from services.http import SESSION
+from jetson_assistant.services.http import SESSION
 
 NO_DEFAULT_LOCATION_MSG = (
     "You don't have a default location set. "

@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 import requests
 from opening_hours import OpeningHours
 
-from config import (
+from jetson_assistant.config import (
     TIMEZONE,
     TIME_FORMAT,
     WEATHER_LAT,
@@ -28,9 +28,9 @@ from config import (
     has_default_location,
     default_location_geocode_query,
 )
-from services import weather_client
-from services.http import SESSION
-from log_fmt import info as log_line, warning as log_warn
+from jetson_assistant.services import weather_client
+from jetson_assistant.services.http import SESSION
+from jetson_assistant.log_fmt import info as log_line, warning as log_warn
 
 log = logging.getLogger("assistant.store")
 

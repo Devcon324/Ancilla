@@ -8,7 +8,7 @@ import numpy as np
 import sounddevice as sd
 import torch
 
-from config import SAMPLE_RATE, MIC_DEVICE, SILENCE_TIMEOUT_SECONDS, NO_SPEECH_TIMEOUT_SECONDS, MAX_RECORD_SECONDS
+from jetson_assistant.config import SAMPLE_RATE, MIC_DEVICE, SILENCE_TIMEOUT_SECONDS, NO_SPEECH_TIMEOUT_SECONDS, MAX_RECORD_SECONDS
 
 _vad_model = None
 

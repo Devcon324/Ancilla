@@ -1,5 +1,5 @@
 {
-  "_instructions": "Copy to defaults.json. Set each field's \"value\". Keys starting with _ are ignored. Plain values also work (see defaults.json). The entire location block is optional — leave fields empty/null if you have no home location.",
+  "_instructions": "Copy to config/defaults.json. Set each field's \"value\". Keys starting with _ are ignored. Plain values also work. The entire location block is optional — leave fields empty/null if you have no home location.",
 
   "location": {
     "street": {

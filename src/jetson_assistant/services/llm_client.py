@@ -16,8 +16,8 @@ from collections.abc import Iterator
 
 import requests
 
-from config import LLAMA_SERVER_URL, LLAMA_MODEL_NAME, ASSISTANT_NAME
-from log_fmt import info as log_line, warning as log_warn
+from jetson_assistant.config import LLAMA_SERVER_URL, LLAMA_MODEL_NAME, ASSISTANT_NAME
+from jetson_assistant.log_fmt import info as log_line, warning as log_warn
 
 log = logging.getLogger("assistant.llm")
 

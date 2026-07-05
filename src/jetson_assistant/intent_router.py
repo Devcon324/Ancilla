@@ -10,10 +10,10 @@ from collections.abc import Iterator
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from config import TIMEZONE, TIME_FORMAT
-from log_fmt import info as log_line
-from services import weather_client, store_hours_client, music_client, llm_client, search_client
-from services.store_hours_client import FILLER_RE as _STORE_FILLER
+from jetson_assistant.config import TIMEZONE, TIME_FORMAT
+from jetson_assistant.log_fmt import info as log_line
+from jetson_assistant.services import weather_client, store_hours_client, music_client, llm_client, search_client
+from jetson_assistant.services.store_hours_client import FILLER_RE as _STORE_FILLER
 
 log = logging.getLogger("assistant.router")
 

@@ -1,23 +1,16 @@
 """
 Self-check for the TTS streaming pipeline (no test framework needed):
 
-    python tests/test_tts_stream.py
+    uv run python tests/test_tts_stream.py
 
 Verifies that speak_stream overlaps synthesis with playback correctly:
   1. playback order matches input order, and
   2. exactly ONE output stream is opened for the whole utterance
      (the perf property: no per-sentence device reopen).
 """
-import sys
-from pathlib import Path
-
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from services import tts_client  # noqa: E402
+from jetson_assistant.services import tts_client
 
 
 def run() -> None:
@@ -28,8 +21,6 @@ def run() -> None:
 
     def fake_synth(text: str):
         synth_order.append(text)
-        # Encode the chunk's index as a constant int16 sample so playback
-        # can be decoded back and its order verified.
         pcm = np.full(8, index_of[text], dtype=np.int16).tobytes()
         return pcm, 22050
 

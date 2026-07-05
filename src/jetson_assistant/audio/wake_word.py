@@ -7,7 +7,7 @@ import sounddevice as sd
 from openwakeword.model import Model
 from openwakeword.utils import download_models
 
-from config import (
+from jetson_assistant.config import (
     SAMPLE_RATE,
     MIC_DEVICE,
     WAKE_WORD_MODEL,
@@ -17,7 +17,7 @@ from config import (
     WAKE_WORD_INTERRUPT_GRACE_SECONDS,
     WAKE_WORD_POST_SPEECH_COOLDOWN_SECONDS,
 )
-from log_fmt import info as log_line
+from jetson_assistant.log_fmt import info as log_line
 
 log = logging.getLogger("assistant.wake_word")
 

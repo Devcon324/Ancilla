@@ -7,18 +7,18 @@ from urllib.parse import urlparse, urlunparse
 
 import requests
 
-from audio.wake_word import (
+from jetson_assistant.audio.wake_word import (
     listen_for_wake_word,
     listen_for_interrupt,
     strip_wake_phrase,
     is_wake_phrase_only,
 )
-from audio.capture import record_utterance, warmup as warmup_vad
-from services import stt_client, tts_client
-import intent_router
-from conversation import ConversationHistory
-from log_fmt import info as log_line
-from config import (
+from jetson_assistant.audio.capture import record_utterance, warmup as warmup_vad
+from jetson_assistant.services import stt_client, tts_client
+from jetson_assistant import intent_router
+from jetson_assistant.conversation import ConversationHistory
+from jetson_assistant.log_fmt import info as log_line
+from jetson_assistant.config import (
     WHISPER_SERVER_URL,
     LLAMA_SERVER_URL,
     PIPER_BIN,
@@ -94,7 +94,7 @@ def startup_check() -> None:
         t0 = time.perf_counter()
         tts_client.warmup()
         log.info("  TTS ready (%.2fs)", time.perf_counter() - t0)
-    from config import (
+    from jetson_assistant.config import (
         WEATHER_LOCATION_NAME,
         TIMEZONE,
         ASSISTANT_NAME,

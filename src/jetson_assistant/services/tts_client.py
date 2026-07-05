@@ -11,7 +11,7 @@ from collections.abc import Iterator
 import numpy as np
 import sounddevice as sd
 
-from config import PIPER_BIN, PIPER_VOICE, SPEAKER_DEVICE, PIPER_LENGTH_SCALE
+from jetson_assistant.config import PIPER_BIN, PIPER_VOICE, SPEAKER_DEVICE, PIPER_LENGTH_SCALE
 
 log = logging.getLogger("assistant.tts")
 

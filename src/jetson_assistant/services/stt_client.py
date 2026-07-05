@@ -13,8 +13,8 @@ import wave
 
 import numpy as np
 
-from config import WHISPER_SERVER_URL, SAMPLE_RATE
-from services.http import SESSION
+from jetson_assistant.config import WHISPER_SERVER_URL, SAMPLE_RATE
+from jetson_assistant.services.http import SESSION
 
 # whisper.cpp emits these when the clip is silence or unusable
 _NO_SPEECH = re.compile(r"^\[[\w\s_-]+\]$")

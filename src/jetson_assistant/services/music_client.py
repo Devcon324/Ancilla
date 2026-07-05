@@ -11,8 +11,8 @@ import random
 import string
 import subprocess
 
-from config import NAVIDROME_URL, NAVIDROME_USER, NAVIDROME_PASS
-from services.http import SESSION
+from jetson_assistant.config import NAVIDROME_URL, NAVIDROME_USER, NAVIDROME_PASS
+from jetson_assistant.services.http import SESSION
 
 _player_process = None
 

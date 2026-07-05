@@ -1,8 +1,8 @@
 """
 Central config.
 
-- defaults.json  — location, timezone, assistant name, units (copy from defaults.example.json)
-- .env           — secrets, local paths, machine-specific overrides (copy from .env.config)
+- config/defaults.json  — location, timezone, assistant name, units (copy from config/defaults.example.json)
+- .env                  — secrets, local paths, machine-specific overrides (copy from .env.example)
 
 Env vars override defaults.json when both define the same setting.
 """
@@ -13,8 +13,8 @@ from typing import Any, Callable
 
 from dotenv import load_dotenv
 
-_ROOT = Path(__file__).resolve().parent
-load_dotenv(_ROOT / ".env")
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(_PROJECT_ROOT / ".env")
 
 
 def _env(key: str, default: str = "") -> str:
@@ -44,13 +44,17 @@ def _nested_get(data: dict, *keys: str, default: Any = None) -> Any:
 
 
 def _load_defaults() -> dict:
-    defaults_file = _env("DEFAULTS_FILE", "defaults.json")
+    defaults_file = _env("DEFAULTS_FILE", "config/defaults.json")
     path = Path(defaults_file)
     if not path.is_absolute():
-        path = _ROOT / path
+        path = _PROJECT_ROOT / path
     if not path.exists():
-        fallback = _ROOT / "defaults.example.json"
-        path = fallback if fallback.exists() else path
+        legacy = _PROJECT_ROOT / "defaults.json"
+        if legacy.exists():
+            path = legacy
+        else:
+            fallback = _PROJECT_ROOT / "config" / "defaults.example.json"
+            path = fallback if fallback.exists() else path
     if not path.exists():
         return {}
     with path.open(encoding="utf-8") as handle:

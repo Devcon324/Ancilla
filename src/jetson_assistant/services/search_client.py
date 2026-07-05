@@ -6,7 +6,7 @@ import logging
 import time
 
 from ddgs import DDGS
-from log_fmt import info as log_line, warning as log_warn
+from jetson_assistant.log_fmt import info as log_line, warning as log_warn
 
 log = logging.getLogger("assistant.search")
 
