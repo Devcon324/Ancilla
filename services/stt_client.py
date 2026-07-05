@@ -8,12 +8,16 @@ Talks to a running whisper-server (from whisper.cpp), started separately with:
 pip install requests numpy scipy
 """
 import io
+import re
 import wave
 
 import numpy as np
 import requests
 
 from config import WHISPER_SERVER_URL, SAMPLE_RATE
+
+# whisper.cpp emits these when the clip is silence or unusable
+_NO_SPEECH = re.compile(r"^\[[\w\s_-]+\]$")
 
 
 def _pcm_to_wav_bytes(pcm: np.ndarray) -> bytes:
@@ -35,4 +39,9 @@ def transcribe(pcm: np.ndarray) -> str:
         timeout=10,
     )
     response.raise_for_status()
-    return response.text.strip()
+    text = response.text.strip()
+    if not text or _NO_SPEECH.match(text):
+        return ""
+    # Collapse internal newlines/whitespace so logs and matching stay single-line
+    text = " ".join(text.split())
+    return text

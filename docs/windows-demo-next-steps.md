@@ -119,7 +119,7 @@ are wrong (device index or exact name).
 
 These are optional at first:
 
-- `GOOGLE_PLACES_API_KEY` — store-hours lookup
+- `STORE_SEARCH_RADIUS_KM` — initial Overpass search radius for store hours (default 10 km)
 - `NAVIDROME_URL`, `NAVIDROME_USER`, `NAVIDROME_PASS` — music playback
 - `WEATHER_LAT`, `WEATHER_LON`, `WEATHER_LOCATION_NAME` — weather location
 
@@ -184,7 +184,7 @@ Goes to the local LLM. If llama-server is down, general questions fail.
 
 ### Store hours
 
-Needs `GOOGLE_PLACES_API_KEY` in `.env`.
+Store hours use OpenStreetMap (Overpass). Set home location in `defaults.json`.
 
 - [Google Cloud Console](https://console.cloud.google.com/)
 - [Places API documentation](https://developers.google.com/maps/documentation/places/web-service)

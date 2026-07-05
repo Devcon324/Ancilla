@@ -1,0 +1,87 @@
+{
+  "_instructions": "Copy to defaults.json. Set each field's \"value\". Keys starting with _ are ignored. Plain values also work (see defaults.json). The entire location block is optional — leave fields empty/null if you have no home location.",
+
+  "location": {
+    "street": {
+      "value": "",
+      "description": "Street address (optional), e.g. \"123 Main St\""
+    },
+    "city": {
+      "value": "",
+      "description": "City or town (optional — with lat/lon or city set, weather uses this as your default)"
+    },
+    "province_or_state": {
+      "value": "",
+      "description": "Province (Canada) or state (US), e.g. \"ON\", \"California\""
+    },
+    "country": {
+      "value": "",
+      "description": "Country name",
+      "options": ["Canada", "United States", "United Kingdom", "Australia", "Other"]
+    },
+    "postal_code": {
+      "value": "",
+      "description": "Postal code (CA) or ZIP code (US), e.g. \"K1A 0A6\" or \"90210\""
+    },
+    "latitude": {
+      "value": null,
+      "description": "Decimal degrees, -90 to 90. Set with longitude for default weather."
+    },
+    "longitude": {
+      "value": null,
+      "description": "Decimal degrees, -180 to 180. Set with latitude for default weather."
+    }
+  },
+
+  "timezone": {
+    "value": "America/Toronto",
+    "options": [
+      "America/St_Johns",
+      "America/Halifax",
+      "America/Toronto",
+      "America/Winnipeg",
+      "America/Edmonton",
+      "America/Vancouver",
+      "America/New_York",
+      "America/Chicago",
+      "America/Denver",
+      "America/Los_Angeles",
+      "America/Phoenix",
+      "America/Anchorage",
+      "Pacific/Honolulu",
+      "Europe/London",
+      "Europe/Paris",
+      "Europe/Berlin",
+      "Asia/Tokyo",
+      "Australia/Sydney",
+      "UTC"
+    ],
+    "note": "Any valid IANA timezone name works; the list above is a set of common examples"
+  },
+
+  "assistant": {
+    "name": {
+      "value": "Jarvis",
+      "description": "Name the assistant uses when speaking (LLM system prompt)"
+    }
+  },
+
+  "units": {
+    "temperature": {
+      "value": "celsius",
+      "options": ["celsius", "fahrenheit"]
+    },
+    "wind": {
+      "value": "km/h",
+      "options": ["km/h", "mph", "m/s", "kn"]
+    }
+  },
+
+  "time": {
+    "format": {
+      "value": "12h",
+      "options": ["12h", "24h"],
+      "description": "12h = \"6:30 PM\", 24h = \"18:30\""
+    }
+  }
+}

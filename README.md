@@ -1,7 +1,8 @@
 # Jetson Voice Assistant
 
-A local-first Alexa replacement: wake word → STT → intent routing
-(weather / store hours / music / general chat) → TTS.
+A local-first Alexa replacement: wake word → STT → hybrid intent routing
+(time / weather / store hours / music / web search / general chat) → streaming TTS,
+with barge-in support to interrupt mid-response.
 
 The assistant code lives in the root-level [audio/](audio) and
 [services/](services) packages, with the launcher entrypoint in
@@ -17,7 +18,7 @@ The wake word phrase is **"hey jarvis"** (openWakeWord built-in model `hey_jarvi
 ## Architecture
 
 ```text
-Mic input ─▶ audio/wake_word.py (always running, cheap)
+Mic input ─▶ audio/wake_word.py (preloaded model, always listening)
                 │ wake word detected
                 ▼
       audio/capture.py (VAD-based recording of your utterance)
@@ -26,23 +27,29 @@ Mic input ─▶ audio/wake_word.py (always running, cheap)
     services/stt_client.py ──▶ whisper-server (whisper.cpp, port 8080)
                 │ text
                 ▼
-         intent_router.py
-            ├─ "what time" ─────────────▶ local clock
-            ├─ "weather" ────────────────▶ Open-Meteo API ──┐
-            ├─ "is X open" ──────────────▶ Google Places ───┤
-            ├─ "play X" / "stop" ────────▶ Navidrome        │
-            └─ everything else ──────────────────────────┐ │
+         intent_router.py (hybrid routing)
+            ├─ "what time" ─────────────▶ local clock (instant)
+            ├─ "weather in X" ───────────▶ Open-Meteo geocode + forecast ──┐
+            ├─ "is X open" ──────────────▶ Google Places ──────────────────┤
+            ├─ "play X" / "stop" ────────▶ Navidrome (instant)              │
+            └─ everything else ──▶ LLM tool-select ──┬─────────────────────┘
+                                    web_search ──▶ ddgs ───────────────────┤
+                                    answer ────────────────────────────────┘ │
                                                            ▼ ▼
                                                    services/llm_client.py ──▶ llama-server
-                                                     (llama.cpp, port 8081)
-                │ spoken reply
+                                                     (/v1/chat/completions, streaming)
+                │ spoken reply (sentence-chunked)
                 ▼
          services/tts_client.py ──▶ Piper ──▶ speaker
+                │ (concurrent wake-word listener for barge-in)
+                ▼
+         Say "hey jarvis" mid-response to interrupt and ask a new question
 ```
 
 The point of routing before the LLM: a 1-3B model has no business guessing
 store hours or weather from memory. It only ever phrases real data into a
-sentence, or handles genuinely open-ended questions.
+sentence, selects whether a web search is needed, or handles genuinely
+open-ended questions.
 
 ## Windows-first setup
 
@@ -57,6 +64,9 @@ copy .env.config .env
 ```
 
 Edit `.env` with your local paths (Piper voice, optional audio device overrides).
+Edit [defaults.json](defaults.json) for location, timezone, assistant name, and units
+(copy from [defaults.example.json](defaults.example.json) if needed — the example lists
+every allowed option for each setting).
 
 **2. Download and install external tools** (not managed by `uv`):
 
@@ -84,7 +94,12 @@ uv run jetson-assistant
 
 **4. Say "hey jarvis", then try a command like `what time is it`.**
 
-All configuration lives in `.env` (copied from [.env.config](.env.config)). Do not
+Configuration is split between two files:
+
+- **[defaults.json](defaults.json)** — location, timezone, assistant name, units
+- **[.env](.env)** — secrets, local paths, machine-specific overrides (copy from [.env.config](.env.config))
+
+Env vars override `defaults.json` when both define the same setting. Do not
 edit `config.py` for local paths or API keys.
 
 ## Next Steps
@@ -92,11 +107,12 @@ edit `config.py` for local paths or API keys.
 Before the assistant can answer real requests, you still need to set up a few
 things.
 
-1. No API key is needed for weather. [weather_client.py](weather_client.py)
-  uses Open-Meteo directly, so that path should work once the local LLM is up.
-2. Store-hours lookup needs `GOOGLE_PLACES_API_KEY` in `.env`. Create
-  a Google Cloud project, enable the Places API, and restrict the key to your
-  machine while testing.
+1. No API key is needed for weather or web search. [services/weather_client.py](services/weather_client.py)
+  uses Open-Meteo with geocoding (ask "what's the weather in Berlin").
+  [services/search_client.py](services/search_client.py) uses DuckDuckGo via `ddgs` for live lookups.
+2. Store-hours lookup uses free OpenStreetMap data via Overpass — no API key.
+  Set your home location in `defaults.json` (city or lat/lon) so the assistant
+  can find the nearest store. Tune search radius with `STORE_SEARCH_RADIUS_KM` in `.env`.
 3. Music playback needs a reachable Navidrome instance and valid
   `NAVIDROME_USER` / `NAVIDROME_PASS` values in `.env`.
 4. Wake-word detection uses the built-in `hey_jarvis` model by default (set
@@ -167,16 +183,22 @@ a reboot without you SSHing in.
 
 ## What's stubbed vs. real
 
-- **Weather, clock, Navidrome, intent routing, TTS, STT, wake word, VAD**:
-  functional code, should work close to as-is.
-- **Store hours**: needs a `GOOGLE_PLACES_API_KEY` env var (free tier is
-  generous for personal use, but it does need a Google Cloud billing account
-  on file).
+- **Weather (place-aware), clock, store hours, web search, intent routing, streaming TTS,
+  barge-in, STT, wake word, VAD**: functional code, should work close to as-is.
+- **Store hours (OSM / Overpass)**: free, no API key. Needs a default location
+  in `defaults.json` for nearest-store lookup. Ask "when will Canadian Tire
+  close today", "is Walmart open", etc.
+- **Music / Navidrome**: needs a reachable Navidrome instance and valid
+  `NAVIDROME_USER` / `NAVIDROME_PASS` values in `.env`, plus `mpv` on PATH.
 - **Wake word model**: defaults to built-in `hey_jarvis` ("hey jarvis"). Train a
   custom model via [openWakeWord](https://github.com/dscripka/openWakeWord) if you
   want a different phrase.
 - **Audio device selection**: set `ASSISTANT_MIC_DEVICE` and
   `ASSISTANT_SPEAKER_DEVICE` in `.env`; leaving them blank uses system defaults.
+- **Barge-in on Windows**: works via concurrent wake-word detection during TTS.
+  No echo cancellation yet — the ReSpeaker on Jetson will improve this.
+- **LLM endpoint**: uses `/v1/chat/completions` (OpenAI-compatible). Set
+  `LLAMA_SERVER_URL` in `.env` if your server uses a different path.
 
 - **Packaging**: the project is still source-first. A PyInstaller or Nuitka
   bundle for Jetson is possible later, but the local development path is plain
@@ -187,9 +209,10 @@ a reboot without you SSHing in.
 - 4GB is tight running whisper.cpp + llama.cpp back to back on the Jetson —
   if you see `cudaMalloc failed`, try `base.en` → `tiny.en` for whisper, or
   drop to the 1B LLM.
-- The ReSpeaker's AEC will help a lot once music is playing, but test asking
-  a question while something's playing early on — that's the failure mode that
-  used to make Alexa look easy in comparison.
+- The ReSpeaker's AEC will help a lot once music is playing, but test barge-in
+  (say "hey jarvis" while the assistant is speaking) early on — without AEC on
+  Windows, false triggers from speaker bleed are possible but rare with the
+  specific "hey jarvis" phrase.
 - `mpv` needs to be reachable on PATH; the music client kills any previous
   track before starting the next one — good enough for a single-user setup,
   not built for multi-room sync.
