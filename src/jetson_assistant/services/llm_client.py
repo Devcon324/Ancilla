@@ -44,10 +44,20 @@ def _build_messages(
     user_text: str,
     context: str | None = None,
     history: list[dict] | None = None,
+    *,
+    source_labels: tuple[str, ...] | None = None,
 ) -> list[dict]:
     system = _system_prompt()
     if context:
-        system += f"\nUse this verified real-time data to answer: {context}"
+        if source_labels:
+            names = ", ".join(source_labels)
+            system += (
+                f"\nWeb search results:\n{context}\n\n"
+                f"Begin your reply with 'According to [source name],' citing the most "
+                f"relevant source from: {names}. Then answer in 1-2 short spoken sentences."
+            )
+        else:
+            system += f"\nUse this verified real-time data to answer: {context}"
     messages: list[dict] = [{"role": "system", "content": system}]
     if history:
         messages.extend(history)
@@ -104,15 +114,22 @@ def ask_stream(
     user_text: str,
     context: str | None = None,
     history: list[dict] | None = None,
+    *,
+    source_labels: tuple[str, ...] | None = None,
 ) -> Iterator[str]:
     """Stream LLM reply, yielding speakable sentence chunks."""
-    ctx = " with context" if context else ""
+    ctx = " with web search" if source_labels else (" with context" if context else "")
     hist = f", {len(history)} prior turn(s)" if history else ""
+    if source_labels:
+        log_line(log, "LLM", f"sources: {', '.join(source_labels)}")
     log_line(log, "LLM", f"streaming ({LLAMA_MODEL_NAME}){ctx}{hist}")
     try:
         response = requests.post(
             LLAMA_SERVER_URL,
-            json=_chat_payload(_build_messages(user_text, context, history), stream=True),
+            json=_chat_payload(
+                _build_messages(user_text, context, history, source_labels=source_labels),
+                stream=True,
+            ),
             timeout=60,
             stream=True,
         )

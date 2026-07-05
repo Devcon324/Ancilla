@@ -21,6 +21,7 @@ dependencies = [
   "ddgs",
   "tzdata",
   "opening-hours-py>=1.4.0",
+  "psutil",
 ]
 
 [project.scripts]

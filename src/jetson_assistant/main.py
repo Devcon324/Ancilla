@@ -17,7 +17,7 @@ from jetson_assistant.audio.capture import record_utterance, warmup as warmup_va
 from jetson_assistant.services import stt_client, tts_client
 from jetson_assistant import intent_router
 from jetson_assistant.conversation import ConversationHistory
-from jetson_assistant.log_fmt import info as log_line
+from jetson_assistant.log_fmt import info as log_line, warning as log_warn, setup_logging
 from jetson_assistant.config import (
     WHISPER_SERVER_URL,
     LLAMA_SERVER_URL,
@@ -28,13 +28,11 @@ from jetson_assistant.config import (
     NAVIDROME_PASS,
     WAKE_WORD_POST_SPEECH_COOLDOWN_SECONDS,
     WAKE_WORD_PRE_RECORD_DELAY_SECONDS,
+    RESOURCE_LOG_INTERVAL_SECONDS,
 )
+from jetson_assistant.resource_monitor import ResourceMonitor
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+setup_logging()
 log = logging.getLogger("assistant")
 
 _QUESTION_END = re.compile(r"[^.!?]*\?\s*$")
@@ -59,9 +57,9 @@ def _warn_missing_env() -> None:
     missing_optional = [name for name, value in optional.items() if not value]
 
     for name in missing_required:
-        log.warning("Missing required env/config value: %s", name)
+        log_warn(log, "Config", f"missing required: {name}")
     for name in missing_optional:
-        log.info("Not configured yet: %s", name)
+        log_line(log, "Config", f"not configured: {name}")
 
 
 def _health_url(service_url: str) -> str:
@@ -74,26 +72,32 @@ def _check_service(name: str, service_url: str) -> None:
     try:
         response = requests.get(health_url, timeout=2)
         if response.ok:
-            log.info("%s reachable at %s (HTTP %s)", name, health_url, response.status_code)
+            log_line(
+                log, "Check",
+                f"{name} reachable at {health_url} (HTTP {response.status_code})",
+            )
         else:
-            log.warning("%s returned HTTP %s at %s", name, response.status_code, health_url)
+            log_warn(
+                log, "Check",
+                f"{name} returned HTTP {response.status_code} at {health_url}",
+            )
     except requests.RequestException as exc:
-        log.warning("%s is not reachable at %s: %s", name, health_url, exc)
+        log_warn(log, "Check", f"{name} not reachable at {health_url}: {exc}")
 
 
 def startup_check() -> None:
-    log.info("Running startup checks...")
+    log_line(log, "Startup", "running checks...")
     _warn_missing_env()
     _check_service("whisper-server", WHISPER_SERVER_URL)
     _check_service("llama-server", LLAMA_SERVER_URL)
-    log.info("Preloading audio models...")
+    log_line(log, "Startup", "preloading audio models...")
     t0 = time.perf_counter()
     warmup_vad()
-    log.info("  VAD ready (%.2fs)", time.perf_counter() - t0)
+    log_line(log, "Startup", f"VAD ready ({time.perf_counter() - t0:.2f}s)")
     if PIPER_VOICE:
         t0 = time.perf_counter()
         tts_client.warmup()
-        log.info("  TTS ready (%.2fs)", time.perf_counter() - t0)
+        log_line(log, "Startup", f"TTS ready ({time.perf_counter() - t0:.2f}s)")
     from jetson_assistant.config import (
         WEATHER_LOCATION_NAME,
         TIMEZONE,
@@ -104,17 +108,15 @@ def startup_check() -> None:
     )
     if DEFAULTS:
         if has_default_location():
-            log.info(
-                "Defaults loaded: location=%s, timezone=%s, assistant=%s",
-                WEATHER_LOCATION_NAME or location_full_address(),
-                TIMEZONE,
-                ASSISTANT_NAME,
+            log_line(
+                log, "Startup",
+                f"defaults: location={WEATHER_LOCATION_NAME or location_full_address()}, "
+                f"timezone={TIMEZONE}, assistant={ASSISTANT_NAME}",
             )
         else:
-            log.info(
-                "Defaults loaded: no default location, timezone=%s, assistant=%s",
-                TIMEZONE,
-                ASSISTANT_NAME,
+            log_line(
+                log, "Startup",
+                f"defaults: no location, timezone={TIMEZONE}, assistant={ASSISTANT_NAME}",
             )
 
 
@@ -225,6 +227,14 @@ def process_interaction(conversation: ConversationHistory) -> str:
 def run() -> None:
     startup_check()
     conversation = ConversationHistory()
+    resource_monitor = None
+    if RESOURCE_LOG_INTERVAL_SECONDS > 0:
+        resource_monitor = ResourceMonitor(RESOURCE_LOG_INTERVAL_SECONDS)
+        resource_monitor.start()
+        log_line(
+            log, "Startup",
+            f"resource logging every {RESOURCE_LOG_INTERVAL_SECONDS:.0f}s",
+        )
 
     while True:
         log_line(log, "Status", "ready, waiting for wake word")

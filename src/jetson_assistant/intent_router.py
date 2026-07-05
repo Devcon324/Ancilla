@@ -159,8 +159,13 @@ def iter_reply(
     tool = llm_client.select_tool(user_text, history=history)
     if tool == "web_search":
         log_line(log, "Route", "web search + llm")
-        search_results = search_client.search(user_text)
-        yield from llm_client.ask_stream(user_text, context=search_results, history=history)
+        results = search_client.search(user_text)
+        yield from llm_client.ask_stream(
+            user_text,
+            context=results.context,
+            history=history,
+            source_labels=results.sources or None,
+        )
     else:
         log_line(log, "Route", "llm")
         yield from llm_client.ask_stream(user_text, history=history)

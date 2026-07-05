@@ -12,6 +12,7 @@ import numpy as np
 import sounddevice as sd
 
 from jetson_assistant.config import PIPER_BIN, PIPER_VOICE, SPEAKER_DEVICE, PIPER_LENGTH_SCALE
+from jetson_assistant.log_fmt import info as log_line, warning as log_warn
 
 log = logging.getLogger("assistant.tts")
 
@@ -51,15 +52,15 @@ def _ensure_voice():
 
                 _syn_config = SynthesisConfig(length_scale=PIPER_LENGTH_SCALE)
             except Exception as exc:  # older piper without SynthesisConfig
-                log.warning("length_scale unsupported by this piper (%s)", exc)
-        log.info(
-            "Piper voice loaded in-process (sample_rate=%s, length_scale=%s)",
-            _piper_sample_rate,
-            PIPER_LENGTH_SCALE,
+                log_warn(log, "TTS", f"length_scale unsupported ({exc})")
+        log_line(
+            log, "TTS",
+            f"voice loaded in-process (sample_rate={_piper_sample_rate}, "
+            f"length_scale={PIPER_LENGTH_SCALE})",
         )
         return _piper_voice
     except Exception as exc:
-        log.warning("In-process Piper unavailable (%s), falling back to subprocess", exc)
+        log_warn(log, "TTS", f"in-process unavailable ({exc}), using subprocess")
         _use_subprocess = True
         return None
 

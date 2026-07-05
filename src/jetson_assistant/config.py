@@ -253,3 +253,6 @@ TIME_FORMAT = _setting("TIME_FORMAT", "time", "format", default="12h")
 # --- Store hours (OpenStreetMap by default; optional Google Places) ---
 STORE_SEARCH_RADIUS_KM = float(_env("STORE_SEARCH_RADIUS_KM", "10"))
 GOOGLE_PLACES_API_KEY = _env("GOOGLE_PLACES_API_KEY", "").strip()
+
+# --- Diagnostics ---
+RESOURCE_LOG_INTERVAL_SECONDS = float(_env("RESOURCE_LOG_INTERVAL_SECONDS", "30"))
