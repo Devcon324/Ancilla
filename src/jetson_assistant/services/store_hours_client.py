@@ -242,13 +242,22 @@ def _search_radius_km(place_label: str) -> float:
 
 
 def _name_matches(store_lower: str, name: str | None, display: str) -> bool:
+    """Require a real store match — not a single shared word like 'canadian'."""
     name_l = (name or "").lower()
     display_l = display.lower()
-    return (
-        store_lower in name_l
-        or store_lower in display_l
-        or any(w in display_l for w in store_lower.split() if len(w) > 3)
-    )
+    if store_lower in name_l or store_lower in display_l:
+        return True
+    words = [w for w in store_lower.split() if len(w) > 2]
+    if not words:
+        return False
+    # Multi-word queries (e.g. "canadian tire") need every significant word.
+    if len(words) >= 2:
+        haystack = f"{name_l} {display_l}"
+        return all(w in haystack for w in words)
+    # Single-word: allow substring only when it is a whole token in the name.
+    word = words[0]
+    tokens = re.findall(r"[a-z0-9]+", f"{name_l} {display_l}")
+    return word in tokens
 
 
 def _reverse_geocode_address(lat: float, lon: float) -> dict:
@@ -322,9 +331,12 @@ def _pick_nearest_hit(
         if required_city and not _matches_requested_city(required_city, address, location):
             continue
         extratags = hit.get("extratags") or {}
+        hours_expr = extratags.get("opening_hours")
+        if hours_expr and not _is_usable_opening_hours(hours_expr):
+            hours_expr = None
         entry = {
             "name": name or store_lower,
-            "opening_hours": extratags.get("opening_hours"),
+            "opening_hours": hours_expr,
             "lat": hit_lat,
             "lon": hit_lon,
             "location": location,
@@ -517,9 +529,12 @@ def _overpass_find_store(name: str, lat: float, lon: float, place_label: str) ->
             tags = element.get("tags") or {}
             if not tags.get("name"):
                 continue
+            hours_expr = tags.get("opening_hours")
+            if hours_expr and not _is_usable_opening_hours(hours_expr):
+                hours_expr = None
             entry = {
                 "name": tags["name"],
-                "opening_hours": tags.get("opening_hours"),
+                "opening_hours": hours_expr,
                 "lat": coords[0],
                 "lon": coords[1],
                 "location": _location_from_overpass_tags(tags),
@@ -835,7 +850,19 @@ def _is_always_open(hours_expr: str) -> bool:
     return normalized == "24/7" or normalized.startswith("24/7")
 
 
+def _is_usable_opening_hours(expr: str | None) -> bool:
+    """Reject Nominatim junk like 'url=https://…' that is not an OH expression."""
+    if not expr or not expr.strip():
+        return False
+    text = expr.strip().lower()
+    if text.startswith("url=") or "://" in text:
+        return False
+    return True
+
+
 def _parse_hours(expr: str) -> OpeningHours | None:
+    if not _is_usable_opening_hours(expr):
+        return None
     try:
         return OpeningHours(expr, timezone=ZoneInfo(TIMEZONE))
     except Exception as exc:

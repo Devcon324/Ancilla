@@ -17,19 +17,37 @@ from jetson_assistant.services.store_hours_client import FILLER_RE as _STORE_FIL
 
 log = logging.getLogger("assistant.router")
 
-# (pattern, intent, capture_group_index) — more specific patterns first
+# Store capture takes the rest of the utterance (not (.+?)\b, which stopped after
+# the first word — e.g. "hours of canadian tire in X" became just "canadian").
+_STORE_CAPTURE = r"(.+?)(?:\s*[?.!]+)?$"
 _STORE_INTENT_PATTERNS: list[tuple[re.Pattern[str], str, int]] = [
     (re.compile(r"\bhow\s+late\s+is\s+(.+?)\s+open\b", re.I), "closing", 1),
     (re.compile(r"\bwhen\s+(?:will|does|do|is)\s+(.+?)\s+clos(?:e|ing|es)\b", re.I), "closing", 1),
     (re.compile(r"\bwhat\s+time\s+(?:does|do|will)\s+(.+?)\s+clos(?:e|ing|es)\b", re.I), "closing", 1),
     (re.compile(r"\b(.+?)\s+closing\s+time\b", re.I), "closing", 1),
-    (re.compile(r"\bclosing\s+time\s+(?:for|of|at)\s+(.+?)\b", re.I), "closing", 1),
+    (re.compile(r"\bclosing\s+time\s+(?:for|of|at)\s+" + _STORE_CAPTURE, re.I), "closing", 1),
     (re.compile(r"\bwhen\s+(?:will|does|do)\s+(.+?)\s+open(?:s|ing)?\b", re.I), "opening", 1),
     (re.compile(r"\bwhat\s+time\s+(?:does|do|will)\s+(.+?)\s+open(?:s|ing)?\b", re.I), "opening", 1),
     (re.compile(r"\b(.+?)\s+opening\s+time\b", re.I), "opening", 1),
-    (re.compile(r"\bopening\s+time\s+(?:for|of|at)\s+(.+?)\b", re.I), "opening", 1),
-    (re.compile(r"\bwhat\s+are\s+(?:the\s+)?hours\s+(?:for|of|at)\s+(.+?)\b", re.I), "hours", 1),
-    (re.compile(r"\bhours\s+(?:for|of|at)\s+(.+?)\b", re.I), "hours", 1),
+    (re.compile(r"\bopening\s+time\s+(?:for|of|at)\s+" + _STORE_CAPTURE, re.I), "opening", 1),
+    (
+        re.compile(
+            r"\bwhat\s+(?:is|are)\s+(?:the\s+)?(?:opening\s+and\s+closing\s+|opening\s+|closing\s+)?hours\s+(?:for|of|at)\s+"
+            + _STORE_CAPTURE,
+            re.I,
+        ),
+        "hours",
+        1,
+    ),
+    (
+        re.compile(
+            r"\b(?:opening\s+and\s+closing\s+|opening\s+|closing\s+)?hours\s+(?:for|of|at)\s+"
+            + _STORE_CAPTURE,
+            re.I,
+        ),
+        "hours",
+        1,
+    ),
     (re.compile(r"\b(is|are)\s+(.+?)\s+(open|closed)\b", re.I), "status", 2),
 ]
 
