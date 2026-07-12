@@ -47,18 +47,38 @@ def get_percent() -> int:
 
 
 def set_percent(percent: int) -> int:
-    """Set absolute volume 0–100; returns the applied percent."""
+    """Set absolute volume 0–100; raises ValueError if outside that range."""
     if not _wpctl_available():
         raise RuntimeError("wpctl is not installed")
-    percent = max(0, min(100, int(percent)))
+    percent = int(percent)
+    if percent > 100 or percent < 0:
+        raise ValueError(f"volume out of range: {percent}")
     _run_wpctl("set-volume", "@DEFAULT_AUDIO_SINK@", f"{percent}%")
+    # Hard cap: never leave PipeWire above 100% (soft-boost / ear-rape).
     applied = get_percent()
+    if applied > 100:
+        _run_wpctl("set-volume", "@DEFAULT_AUDIO_SINK@", "100%")
+        applied = 100
     log_line(log, "Volume", f"{applied}%")
     return applied
 
 
 def set_volume_spoken(percent: int) -> str:
     """Set absolute volume and return a short spoken confirmation."""
+    try:
+        percent = int(percent)
+    except (TypeError, ValueError):
+        return "I couldn't understand that volume level."
+    # Fail-safe: STT often hears "30%" as "230%" — never clamp up to max.
+    if percent > 100:
+        log_warn(log, "Volume", f"rejected {percent}% (over 100)")
+        return (
+            "I heard a volume over 100 percent, so I left it unchanged. "
+            "Please say a level between 0 and 100."
+        )
+    if percent < 0:
+        log_warn(log, "Volume", f"rejected {percent}% (negative)")
+        return "Volume can't be negative. Please say a level between 0 and 100."
     try:
         new = set_percent(percent)
         return f"Volume is now {new} percent."
@@ -73,7 +93,8 @@ def raise_volume(step: int = _STEP) -> str:
         current = get_percent()
         if current >= 100:
             return "Volume is already at 100 percent."
-        new = set_percent(current + step)
+        # Never jump past 100 via a large step.
+        new = set_percent(min(100, current + step))
         return f"Volume is now {new} percent."
     except Exception as exc:
         log_warn(log, "Volume", f"raise failed: {exc}")

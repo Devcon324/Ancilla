@@ -4,9 +4,11 @@ Music playback via mpv.
 Backends (first match wins):
   1. Navidrome / Subsonic — your own library (set NAVIDROME_* in .env)
   2. SomaFM — listener-supported, commercial-free internet radio
-  3. Radio Browser — open community radio directory (https://api.radio-browser.info)
+  3. YouTube audio via yt-dlp (optional; services/youtube_music.py)
+  4. Radio Browser — open community radio directory
 
 Needs: sudo apt install mpv
+Optional YouTube: uv add yt-dlp  (disable with MUSIC_YOUTUBE_ENABLED=false)
 """
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ import os
 import random
 import re
 import shutil
+import signal
 import socket
 import string
 import subprocess
@@ -27,6 +30,8 @@ from urllib.parse import urlencode
 from jetson_assistant.config import NAVIDROME_URL, NAVIDROME_USER, NAVIDROME_PASS
 from jetson_assistant.log_fmt import info as log_line, warning as log_warn
 from jetson_assistant.services.http import SESSION
+# Optional hobby backend — delete youtube_music.py + this import/usage to remove.
+from jetson_assistant.services import youtube_music
 
 log = logging.getLogger("assistant.music")
 
@@ -87,11 +92,30 @@ def _ipc_path() -> str:
 def _stop_player() -> None:
     global _player_process, _duck_restore
     if _player_process is not None:
-        _player_process.terminate()
+        pid = _player_process.pid
+        try:
+            # start_new_session=True → mpv is its own process group; kill the group
+            # so Ctrl+C on Jarvis does not leave audio playing.
+            os.killpg(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                _player_process.terminate()
+            except OSError:
+                pass
         try:
             _player_process.wait(timeout=2)
         except subprocess.TimeoutExpired:
-            _player_process.kill()
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, OSError):
+                try:
+                    _player_process.kill()
+                except OSError:
+                    pass
+            try:
+                _player_process.wait(timeout=1)
+            except (subprocess.TimeoutExpired, OSError):
+                pass
         _player_process = None
     _duck_restore = None
     path = _ipc_path()
@@ -99,6 +123,12 @@ def _stop_player() -> None:
         os.unlink(path)
     except OSError:
         pass
+
+
+def shutdown() -> None:
+    """Stop music on process exit (Ctrl+C / SIGTERM / atexit)."""
+    cancel_queued_play()
+    _stop_player()
 
 
 def _start_stream(url: str, *, volume: int = 100) -> None:
@@ -111,18 +141,25 @@ def _start_stream(url: str, *, volume: int = 100) -> None:
     ipc = _ipc_path()
     # Force stereo + Pulse/PipeWire so Bluetooth A2DP sinks actually output audio.
     # (WirePlumber can restore mpv as MONO / Music as FC, which silences stereo BT.)
+    cmd = [
+        "mpv",
+        "--no-video",
+        "--really-quiet",
+        "--no-terminal",
+        "--ao=pulse",
+        "--audio-channels=stereo",
+        f"--input-ipc-server={ipc}",
+        f"--volume={max(0, min(100, int(volume)))}",
+    ]
+    # Prefer venv yt-dlp when playing YouTube watch URLs.
+    if "youtube.com" in url or "youtu.be" in url:
+        ytdlp = youtube_music.yt_dlp_path()
+        if ytdlp:
+            cmd.append(f"--script-opts=ytdl_hook-ytdl_path={ytdlp}")
+        cmd.append("--ytdl-format=bestaudio/best")
+    cmd.append(url)
     _player_process = subprocess.Popen(
-        [
-            "mpv",
-            "--no-video",
-            "--really-quiet",
-            "--no-terminal",
-            "--ao=pulse",
-            "--audio-channels=stereo",
-            f"--input-ipc-server={ipc}",
-            f"--volume={max(0, min(100, int(volume)))}",
-            url,
-        ],
+        cmd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
@@ -464,6 +501,22 @@ def play_track(query: str) -> str:
             soma = _play_somafm(query)
             if soma:
                 return soma
+
+        # Hobby YouTube (yt-dlp) — self-contained in youtube_music.py.
+        # Skip for clear "radio/station" requests so Radio Browser can handle those.
+        _radioish = bool(re.search(r"\b(radio|station)\b", query, re.I))
+        if youtube_music.enabled() and (
+            youtube_music.wants_youtube(query)
+            or youtube_music.looks_like_youtube_url(query)
+            or not _radioish
+        ):
+            yt = youtube_music.play_message(query)
+            if isinstance(yt, tuple):
+                url, spoken = yt
+                _queue_stream(url)
+                return spoken
+            if isinstance(yt, str):
+                return yt
 
         radio = _play_radio_browser(query)
         if radio.startswith("I couldn't find"):

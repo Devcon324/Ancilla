@@ -155,6 +155,10 @@ ASSISTANT_BARGE_IN = _env("ASSISTANT_BARGE_IN", "false").strip().lower() in (
     "yes",
     "on",
 )
+# Safe default sink level applied once at process start (0–100).
+ASSISTANT_STARTUP_VOLUME_PERCENT = int(
+    float(_env("ASSISTANT_STARTUP_VOLUME_PERCENT", "10"))
+)
 
 # --- Recording (VAD endpointing) ---
 # Seconds of silence after speech before we stop recording and send to STT
@@ -177,6 +181,13 @@ PIPER_LENGTH_SCALE = float(_env("PIPER_LENGTH_SCALE", "1.0"))
 NAVIDROME_URL = _env("NAVIDROME_URL", "http://127.0.0.1:4533")
 NAVIDROME_USER = _env("NAVIDROME_USER")
 NAVIDROME_PASS = _env("NAVIDROME_PASS")
+# Hobby YouTube audio via yt-dlp (see services/youtube_music.py). Easy to disable.
+MUSIC_YOUTUBE_ENABLED = _env("MUSIC_YOUTUBE_ENABLED", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 # --- From defaults.json (env vars still override) ---
 TIMEZONE = _setting("TIMEZONE", "timezone", default="America/Toronto")

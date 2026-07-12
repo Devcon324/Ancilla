@@ -15,7 +15,7 @@ from jetson_assistant.audio.wake_word import (
     warmup as warmup_wake_word,
 )
 from jetson_assistant.audio.capture import record_utterance, record_fixed_seconds, warmup as warmup_vad
-from jetson_assistant.services import stt_client, tts_client, music_client
+from jetson_assistant.services import stt_client, tts_client, music_client, volume_client
 from jetson_assistant import intent_router
 from jetson_assistant.conversation import ConversationHistory
 from jetson_assistant.log_fmt import info as log_line, warning as log_warn, setup_logging
@@ -31,6 +31,7 @@ from jetson_assistant.config import (
     WAKE_WORD_PRE_RECORD_DELAY_SECONDS,
     RESOURCE_LOG_INTERVAL_SECONDS,
     ASSISTANT_BARGE_IN,
+    ASSISTANT_STARTUP_VOLUME_PERCENT,
 )
 from jetson_assistant.resource_monitor import ResourceMonitor
 setup_logging()
@@ -92,6 +93,13 @@ def startup_check() -> None:
     _warn_missing_env()
     _check_service("whisper-server", WHISPER_SERVER_URL)
     _check_service("llama-server", LLAMA_SERVER_URL)
+    # Safe default before any TTS / music (ear-rape failsafe).
+    try:
+        level = max(0, min(100, int(ASSISTANT_STARTUP_VOLUME_PERCENT)))
+        applied = volume_client.set_percent(level)
+        log_line(log, "Startup", f"volume set to {applied}%")
+    except Exception as exc:
+        log_warn(log, "Startup", f"could not set startup volume: {exc}")
     log_line(log, "Startup", "preloading audio models...")
     t0 = time.perf_counter()
     warmup_vad()
@@ -287,6 +295,23 @@ def process_interaction(
 
 
 def run() -> None:
+    import atexit
+    import signal as signal_mod
+
+    def _cleanup(_signum=None, _frame=None) -> None:
+        music_client.shutdown()
+
+    def _cleanup_and_exit(signum, _frame) -> None:
+        _cleanup()
+        raise SystemExit(128 + int(signum))
+
+    atexit.register(_cleanup)
+    for sig in (signal_mod.SIGINT, signal_mod.SIGTERM):
+        try:
+            signal_mod.signal(sig, _cleanup_and_exit)
+        except (ValueError, OSError):
+            pass
+
     startup_check()
     conversation = ConversationHistory()
     resource_monitor = None
@@ -298,36 +323,41 @@ def run() -> None:
             f"resource logging every {RESOURCE_LOG_INTERVAL_SECONDS:.0f}s",
         )
 
-    while True:
-        log_line(log, "Status", "ready, waiting for wake word")
-        ducked = False
+    try:
+        while True:
+            log_line(log, "Status", "ready, waiting for wake word")
+            ducked = False
 
-        def _on_wake():
-            nonlocal ducked
-            log_line(log, "Wake", "detected — listening")
-            if music_client.is_playing():
-                ducked = music_client.duck(music_client.DUCK_PERCENT)
+            def _on_wake():
+                nonlocal ducked
+                log_line(log, "Wake", "detected — listening")
+                if music_client.is_playing():
+                    ducked = music_client.duck(music_client.DUCK_PERCENT)
 
-        # One mic stream: capture starts on first wake hit (no gap).
-        pcm = listen_wake_then_utterance(on_wake=_on_wake)
+            # One mic stream: capture starts on first wake hit (no gap).
+            pcm = listen_wake_then_utterance(on_wake=_on_wake)
 
-        try:
-            result = process_interaction(conversation, pcm=pcm)
-            while result in ("barge_in", "follow_up"):
-                if result == "follow_up":
-                    log_line(log, "Status", "listening for your reply (no wake word needed)")
-                # No pre-record sleep — open the mic immediately.
-                result = process_interaction(conversation)
-        finally:
-            if ducked:
-                music_client.unduck()
+            try:
+                result = process_interaction(conversation, pcm=pcm)
+                while result in ("barge_in", "follow_up"):
+                    if result == "follow_up":
+                        log_line(log, "Status", "listening for your reply (no wake word needed)")
+                    # No pre-record sleep — open the mic immediately.
+                    result = process_interaction(conversation)
+            finally:
+                if ducked:
+                    music_client.unduck()
 
-        # Cooldown so TTS / BT echo does not immediately re-trigger wake.
-        cooldown = WAKE_WORD_POST_SPEECH_COOLDOWN_SECONDS
-        if result == "empty":
-            # False wake (music/TTS bleed) — wait a bit longer before listening again.
-            cooldown = max(cooldown, 2.0)
-        time.sleep(cooldown)
+            # Cooldown so TTS / BT echo does not immediately re-trigger wake.
+            cooldown = WAKE_WORD_POST_SPEECH_COOLDOWN_SECONDS
+            if result == "empty":
+                # False wake (music/TTS bleed) — wait a bit longer before listening again.
+                cooldown = max(cooldown, 2.0)
+            time.sleep(cooldown)
+    finally:
+        music_client.shutdown()
+        if resource_monitor is not None:
+            resource_monitor.stop()
 
 
 if __name__ == "__main__":
