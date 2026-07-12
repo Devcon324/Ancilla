@@ -6,6 +6,7 @@ import logging
 import queue
 import subprocess
 import threading
+import time
 from collections.abc import Iterator
 
 import numpy as np
@@ -13,10 +14,12 @@ import sounddevice as sd
 
 from jetson_assistant.config import PIPER_BIN, PIPER_VOICE, SPEAKER_DEVICE, PIPER_LENGTH_SCALE
 from jetson_assistant.log_fmt import info as log_line, warning as log_warn
+from jetson_assistant.audio.speech_normalize import for_speech
 
 log = logging.getLogger("assistant.tts")
 
 _stop_event = threading.Event()
+_pause_event = threading.Event()
 _play_lock = threading.Lock()
 _piper_voice = None
 _piper_sample_rate = 22050
@@ -31,8 +34,19 @@ def warmup() -> None:
 
 def stop() -> None:
     """Abort any in-progress TTS playback."""
+    _pause_event.clear()
     _stop_event.set()
     sd.stop()
+
+
+def pause() -> None:
+    """Temporarily silence TTS (for barge-in confirmation) without aborting."""
+    _pause_event.set()
+
+
+def resume() -> None:
+    """Continue TTS after a false barge-in candidate."""
+    _pause_event.clear()
 
 
 def _ensure_voice():
@@ -107,6 +121,11 @@ def _write_blocking(stream, raw_pcm: bytes) -> bool:
     for i in range(0, len(audio), block):
         if _stop_event.is_set():
             return False
+        # Hold the stream open but emit silence while paused (barge-in verify).
+        while _pause_event.is_set():
+            if _stop_event.is_set():
+                return False
+            time.sleep(0.02)
         stream.write(audio[i : i + block])
     return True
 
@@ -119,6 +138,7 @@ def speak_stream(chunks: Iterator[str]) -> bool:
     """
     with _play_lock:
         _stop_event.clear()
+        _pause_event.clear()
         rate = _output_sample_rate()
 
         # Small buffer: synthesize ahead by up to 2 sentences while playing.
@@ -129,7 +149,7 @@ def speak_stream(chunks: Iterator[str]) -> bool:
                 for chunk in chunks:
                     if _stop_event.is_set():
                         break
-                    text = chunk.strip()
+                    text = for_speech(chunk.strip())
                     if not text:
                         continue
                     raw_pcm, _ = _synthesize(text)

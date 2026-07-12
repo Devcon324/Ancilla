@@ -21,6 +21,8 @@ Related general speaker guide: [jetson-speakers-ssh.md](jetson-speakers-ssh.md).
 | `Failed to connect: org.bluez.Error.InProgress br-connection-busy` | `bluetoothctl connect` was run twice while a connect was already in progress — usually harmless |
 | `play WARN alsa: can't encode 0-bit` | Harmless sox quirk; ignore if you hear audio |
 | What finally worked for playback | `pw-play /usr/share/sounds/alsa/Front_Center.wav` once SOUNDBLADE was the default sink |
+| Thin / robotic / phone-call sound | BlueZ stuck on **HFP/mSBC** (`s16le 1ch 16000Hz`) instead of **A2DP** (`2ch 48000Hz`) |
+| `pactl set-card-profile … a2dp-sink` → No such entity | NVIDIA’s `bluetoothd` drop-in disables the A2DP plugin (see below) |
 
 ---
 
@@ -29,6 +31,7 @@ Related general speaker guide: [jetson-speakers-ssh.md](jetson-speakers-ssh.md).
 1. **SSH does not set the user runtime dir** → PipeWire tools fail until you export `XDG_RUNTIME_DIR` / `DBUS_SESSION_BUS_ADDRESS`.
 2. **Default sink is onboard APE**, not the Bluetooth speaker → must connect BT and `wpctl set-default` the SOUNDBLADE **sink**.
 3. **GDM runs its own PipeWire** on `seat0` and steals BlueZ profile registration → kill GDM’s audio stack (or disable logind arbitration) so your user session can create `bluez_output.*` sinks.
+4. **NVIDIA disables BlueZ A2DP** via `/usr/lib/systemd/system/bluetooth.service.d/nv-bluetooth-service.conf` (`--noplugin=audio,a2dp,avrcp,sap`) → only HFP headset profiles appear; sound is phone-call quality until you re-enable `a2dp`/`avrcp`.
 
 ---
 
@@ -51,6 +54,33 @@ export XDG_RUNTIME_DIR=/run/user/$(id -u)
 export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
 systemctl --user restart pipewire pipewire-pulse wireplumber
 ```
+
+### 1b. Re-enable A2DP (required for good Bluetooth sound quality)
+
+Jetson ships with A2DP plugins disabled. Override that (filename must sort **after** `nv-bluetooth-service.conf`):
+
+```bash
+sudo tee /etc/systemd/system/bluetooth.service.d/zz-a2dp-enable.conf >/dev/null <<'EOF'
+[Service]
+# NVIDIA disables a2dp/avrcp → HFP-only (bad quality). Keep legacy audio+sap off.
+ExecStart=
+ExecStart=/usr/libexec/bluetooth/bluetoothd --noplugin=audio,sap
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart bluetooth
+systemctl --user restart pipewire pipewire-pulse wireplumber
+```
+
+Confirm after reconnect:
+
+```bash
+wpctl inspect @DEFAULT_AUDIO_SINK@ | grep -iE 'codec|profile'
+# expect: api.bluez5.profile = "a2dp-sink" and codec sbc / sbc_xq
+pactl list sinks short | grep bluez
+# expect: s16le 2ch 48000Hz  (NOT 1ch 16000Hz)
+```
+
+Prefer SBC-XQ when available: `pactl set-card-profile bluez_card.<mac> a2dp-sink-sbc_xq`
 
 ### 2. Install the connect helper
 
@@ -232,8 +262,9 @@ Then update `BT_SPEAKER_MAC` / `BT_SPEAKER_NAME` or edit `~/bin/bt-soundblade`, 
 | Path | Purpose |
 |------|---------|
 | `~/.bashrc` | Persist `XDG_RUNTIME_DIR`, D-Bus, `PATH` |
-| `~/bin/bt-soundblade` | Connect speaker + set default sink |
-| `~/.config/wireplumber/bluetooth.lua.d/51-disable-logind.lua` | Stop logind from giving BT audio only to GDM |
+| `~/bin/bt-soundblade` | Connect speaker, force A2DP, set default sink |
+| `~/.config/wireplumber/bluetooth.lua.d/51-bluez-a2dp.lua` | Own BT audio + prefer A2DP / SBC-XQ |
+| `/etc/systemd/system/bluetooth.service.d/zz-a2dp-enable.conf` | Re-enable BlueZ A2DP (overrides NVIDIA drop-in) |
 | `~/.env` in the repo (`ASSISTANT_SPEAKER_DEVICE`) | Tell Jarvis which PortAudio device to use |
 
 ---

@@ -34,7 +34,8 @@ TOOL_SELECT_PROMPT = (
     "web_search or answer. Use web_search for current events, recent news, live data, "
     "sports scores, stock prices, or anything that needs up-to-date information. "
     "Use answer for general knowledge, jokes, definitions, math, timeless facts, and "
-    "anything about you, the assistant, or the person talking to you."
+    "anything about you, the assistant, or the person talking to you. "
+    "Never use web_search for device controls (volume, music, stop/pause audio)."
 )
 
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")

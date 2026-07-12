@@ -12,7 +12,15 @@ from zoneinfo import ZoneInfo
 
 from jetson_assistant.config import TIMEZONE, TIME_FORMAT
 from jetson_assistant.log_fmt import info as log_line
-from jetson_assistant.services import weather_client, store_hours_client, music_client, llm_client, search_client
+from jetson_assistant.services import (
+    weather_client,
+    store_hours_client,
+    music_client,
+    volume_client,
+    llm_client,
+    search_client,
+    tts_client,
+)
 from jetson_assistant.services.store_hours_client import FILLER_RE as _STORE_FILLER
 
 log = logging.getLogger("assistant.router")
@@ -52,6 +60,107 @@ _STORE_INTENT_PATTERNS: list[tuple[re.Pattern[str], str, int]] = [
 ]
 
 _PLAY_PATTERN = re.compile(r"\bplay\s+(.+)", re.IGNORECASE)
+_STOP_PATTERN = re.compile(
+    r"^(?:please\s+)?(?:"
+    r"stop(?:\s+(?:music|playing|playback|that|the\s+music|radio))?"
+    r"|pause(?:\s+(?:music|playback|that))?"
+    r"|cancel"
+    r"|quiet"
+    r"|be\s+quiet"
+    r"|shut\s+up"
+    r"|enough"
+    r"|that'?s\s+enough"
+    r")(?:\s+please)?$",
+    re.IGNORECASE,
+)
+# Silent dismiss — return to wake wait with no spoken reply.
+_DISMISS_PATTERN = re.compile(
+    r"^(?:please\s+)?(?:"
+    r"never\s*mind"
+    r"|nvm"
+    r"|forget\s+(?:it|that)"
+    r"|disregard(?:\s+that)?"
+    r"|nothing"
+    r"|false\s+alarm"
+    r"|don'?t\s+(?:worry|bother)"
+    r"|cancel\s+(?:that|the\s+request)"
+    r"|as\s+you\s+were"
+    r")(?:\s+please)?$",
+    re.IGNORECASE,
+)
+
+# Absolute: "set volume to 20%", "volume at 50 percent", "make volume 30"
+_VOLUME_SET = re.compile(
+    r"(?:"
+    r"(?:set|change|adjust|put|make)\s+(?:(?:the|your)\s+)?volume\s*(?:to|at|=)?\s*"
+    r"|volume\s*(?:to|at|=)\s*"
+    r")"
+    r"(?P<num>\d{1,3})\s*(?:%|percent|per\s*cent)?\b",
+    re.IGNORECASE,
+)
+_VOLUME_SET_WORDS = re.compile(
+    r"(?:"
+    r"(?:set|change|adjust|put|make)\s+(?:(?:the|your)\s+)?volume\s*(?:to|at)?\s*"
+    r"|volume\s*(?:to|at)\s*"
+    r")"
+    r"(?P<word>max(?:imum)?|full|half|mute|zero|min(?:imum)?)\b"
+    r"|\b(?P<word2>mute)\s+(?:(?:the|your)\s+)?volume\b"
+    r"|\bvolume\s+(?P<word3>mute|max(?:imum)?|full|half|zero)\b",
+    re.IGNORECASE,
+)
+_VOLUME_UP = re.compile(
+    r"(?:"
+    r"(?:turn|put)\s+(?:the\s+|your\s+)?(?:volume\s+)?up"
+    r"|volume\s+up"
+    r"|increase\s+(?:the\s+|your\s+)?volume"
+    r"|raise\s+(?:the\s+|your\s+)?volume"
+    r"|louder"
+    r"|make\s+it\s+louder"
+    r"|turn\s+it\s+up"
+    r"|bump\s+(?:the\s+)?volume"
+    r")",
+    re.IGNORECASE,
+)
+_VOLUME_DOWN = re.compile(
+    r"(?:"
+    r"(?:turn|put)\s+(?:the\s+|your\s+)?(?:volume\s+)?down"
+    r"|volume\s+down"
+    r"|decrease\s+(?:the\s+|your\s+)?volume"
+    r"|lower\s+(?:the\s+|your\s+)?volume"
+    r"|quieter"
+    r"|softer"
+    r"|make\s+it\s+(?:quieter|softer)"
+    r"|turn\s+it\s+down"
+    r")",
+    re.IGNORECASE,
+)
+_VOLUME_STEP = re.compile(
+    r"(?:by\s+)?(?P<num>\d{1,3})\s*(?:%|percent|per\s*cent)?",
+    re.IGNORECASE,
+)
+_VOLUME_QUERY = re.compile(
+    r"(?:"
+    r"what(?:'s|\s+is)\s+(?:the\s+|your\s+|our\s+)?volume"
+    r"|what\s+volume\s+(?:are\s+you\s+at|is\s+it)"
+    r"|how\s+loud(?:\s+(?:are\s+you|is\s+it))?"
+    r"|current\s+volume"
+    r"|volume\s+(?:level|percent|percentage)"
+    r"|volume\s+at\s+(?:right\s+)?now"
+    r"|tell\s+me\s+(?:the\s+|your\s+)?volume"
+    r"|check\s+(?:the\s+)?volume"
+    r")",
+    re.IGNORECASE,
+)
+_VOLUME_WORD_LEVELS = {
+    "max": 100,
+    "maximum": 100,
+    "full": 100,
+    "half": 50,
+    "mute": 0,
+    "zero": 0,
+    "min": 0,
+    "minimum": 0,
+}
 _WEATHER_PLACE_PATTERN = re.compile(
     r"(?:weather|temperature|forecast|like).*?(?:in|at|for)\s+(.+?)(?:\?|$|\.)",
     re.IGNORECASE,
@@ -68,8 +177,74 @@ _TIME_QUERY = re.compile(
 )
 
 
+def _normalize_command(text: str) -> str:
+    """Lowercase and strip trailing punctuation for exact-ish command matching."""
+    return re.sub(r"[?.!,]+$", "", text.strip().lower()).strip()
+
+
 def _is_time_query(text: str) -> bool:
     return bool(_TIME_QUERY.search(text))
+
+
+def _is_stop_command(text: str) -> bool:
+    return bool(_STOP_PATTERN.match(_normalize_command(text)))
+
+
+def is_dismiss_command(user_text: str) -> bool:
+    """True for 'nevermind' / cancel-request — no spoken reply."""
+    return bool(_DISMISS_PATTERN.match(_normalize_command(user_text)))
+
+
+def _volume_step_from_text(text: str, *, default: int = 10) -> int:
+    match = _VOLUME_STEP.search(text)
+    if not match:
+        return default
+    try:
+        return max(1, min(100, int(match.group("num"))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _handle_volume_command(text: str) -> str | None:
+    """Fast-path volume control. Returns spoken reply, or None if not a volume command."""
+    set_match = _VOLUME_SET.search(text)
+    if set_match:
+        return volume_client.set_volume_spoken(int(set_match.group("num")))
+
+    word_match = _VOLUME_SET_WORDS.search(text)
+    if word_match:
+        word = (
+            word_match.group("word")
+            or word_match.group("word2")
+            or word_match.group("word3")
+            or ""
+        ).lower()
+        level = _VOLUME_WORD_LEVELS.get(word)
+        if level is not None:
+            return volume_client.set_volume_spoken(level)
+
+    if re.search(r"\bunmute\b", text, re.I):
+        return volume_client.set_volume_spoken(50)
+
+    # Query before bare up/down so "what's the volume" isn't treated as change.
+    if _VOLUME_QUERY.search(text) and not (
+        _VOLUME_UP.search(text) or _VOLUME_DOWN.search(text) or _VOLUME_SET.search(text)
+    ):
+        return volume_client.report_volume()
+
+    if _VOLUME_UP.search(text):
+        return volume_client.raise_volume(_volume_step_from_text(text))
+
+    if _VOLUME_DOWN.search(text):
+        return volume_client.lower_volume(_volume_step_from_text(text))
+
+    return None
+
+
+def _stop_everything() -> str:
+    """Halt music/radio and any TTS, then return a short spoken ack."""
+    tts_client.stop()
+    return music_client.stop()
 
 
 def _format_time() -> str:
@@ -115,16 +290,42 @@ def _needs_context_phrasing(user_text: str, text: str) -> tuple[str, str] | None
     return None
 
 
+def is_play_command(user_text: str) -> bool:
+    return bool(_PLAY_PATTERN.search(user_text.strip().lower()))
+
+
+def ends_turn(user_text: str) -> bool:
+    """True for commands that must return to wake-word wait (no follow-up listen)."""
+    text = user_text.strip().lower()
+    if is_dismiss_command(text):
+        return True
+    if _is_stop_command(text):
+        return True
+    if is_play_command(text):
+        return True
+    if (
+        _VOLUME_SET.search(text)
+        or _VOLUME_SET_WORDS.search(text)
+        or _VOLUME_UP.search(text)
+        or _VOLUME_DOWN.search(text)
+        or _VOLUME_QUERY.search(text)
+        or re.search(r"\bunmute\b", text, re.I)
+    ):
+        return True
+    return False
+
+
 def allows_barge_in(user_text: str) -> bool:
-    """Only LLM-backed replies benefit from barge-in; instant paths skip it."""
+    """True when mid-reply wake-word barge-in is useful.
+
+    Instant one-liners (time / play / stop / volume) skip it. Longer replies
+    (weather, store hours, LLM) allow it; false speaker-bleed is filtered by
+    pause-and-confirm in main._speak_with_barge_in.
+    """
     text = user_text.strip().lower()
     if _is_time_query(text):
         return False
-    if text in ("stop", "stop music", "pause"):
-        return False
-    if _PLAY_PATTERN.search(text):
-        return False
-    if _extract_store_and_intent(text):
+    if ends_turn(text):
         return False
     return True
 
@@ -142,9 +343,16 @@ def iter_reply(
         yield _format_time()
         return
 
-    if text in ("stop", "stop music", "pause"):
-        log_line(log, "Route", "music stop")
-        yield music_client.stop()
+    if _is_stop_command(text):
+        log_line(log, "Route", "stop")
+        # Stop music/TTS; main loop returns to wake-word wait after this turn.
+        yield _stop_everything()
+        return
+
+    volume_reply = _handle_volume_command(text)
+    if volume_reply is not None:
+        log_line(log, "Route", "volume")
+        yield volume_reply
         return
 
     play_match = _PLAY_PATTERN.search(text)

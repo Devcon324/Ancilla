@@ -144,6 +144,17 @@ WAKE_WORD_POST_SPEECH_COOLDOWN_SECONDS = float(
 WAKE_WORD_PRE_RECORD_DELAY_SECONDS = float(
     _env("WAKE_WORD_PRE_RECORD_DELAY_SECONDS", "0.05")
 )
+# Ignore wake scores briefly after opening the mic (TTS / BT echo decay).
+WAKE_WORD_STARTUP_GRACE_SECONDS = float(
+    _env("WAKE_WORD_STARTUP_GRACE_SECONDS", "0.5")
+)
+# Off by default: Bluetooth speaker audio often false-triggers wake mid-TTS.
+ASSISTANT_BARGE_IN = _env("ASSISTANT_BARGE_IN", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 # --- Recording (VAD endpointing) ---
 # Seconds of silence after speech before we stop recording and send to STT

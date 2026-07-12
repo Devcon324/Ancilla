@@ -81,3 +81,29 @@ def record_utterance() -> np.ndarray:
     if not frames:
         return np.zeros(0, dtype=np.int16)
     return np.concatenate(frames).flatten()
+
+
+def record_fixed_seconds(duration: float) -> np.ndarray:
+    """Record a fixed-length mic clip (used to confirm barge-in wake phrase)."""
+    duration = max(0.2, float(duration))
+    frames: list[np.ndarray] = []
+    chunk_size = 512
+    total_chunks = int(duration * SAMPLE_RATE / chunk_size)
+    stream = sd.InputStream(
+        samplerate=SAMPLE_RATE,
+        channels=1,
+        dtype="int16",
+        device=MIC_DEVICE,
+        blocksize=chunk_size,
+    )
+    stream.start()
+    try:
+        for _ in range(total_chunks):
+            chunk, _ = stream.read(chunk_size)
+            frames.append(chunk.copy())
+    finally:
+        stream.stop()
+        stream.close()
+    if not frames:
+        return np.zeros(0, dtype=np.int16)
+    return np.concatenate(frames).flatten()

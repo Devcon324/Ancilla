@@ -61,15 +61,23 @@ _WIND_API_UNITS = {
     "kn": "kn",
 }
 
-_TEMP_SYMBOLS = {
-    "celsius": "\u00b0C",
-    "fahrenheit": "\u00b0F",
+# Spoken forms for TTS (avoid "km slash h" / "degree C").
+_TEMP_SPEAK = {
+    "celsius": "degrees Celsius",
+    "fahrenheit": "degrees Fahrenheit",
+}
+_WIND_SPEAK = {
+    "km/h": "kilometers per hour",
+    "mph": "miles per hour",
+    "m/s": "meters per second",
+    "kn": "knots",
 }
 
 
 def _fetch_forecast(lat: float, lon: float, location_name: str) -> str:
     wind_api = _WIND_API_UNITS.get(WIND_UNIT, "kmh")
-    temp_symbol = _TEMP_SYMBOLS.get(TEMPERATURE_UNIT, "\u00b0C")
+    temp_unit = _TEMP_SPEAK.get(TEMPERATURE_UNIT, "degrees Celsius")
+    wind_unit = _WIND_SPEAK.get(WIND_UNIT, WIND_UNIT)
 
     resp = SESSION.get(
         "https://api.open-meteo.com/v1/forecast",
@@ -90,8 +98,8 @@ def _fetch_forecast(lat: float, lon: float, location_name: str) -> str:
     condition = _WMO_CODES.get(current["weather_code"], "unclear conditions")
 
     return (
-        f"It's currently {temp}{temp_symbol} and {condition} in {location_name}, "
-        f"with wind around {wind} {WIND_UNIT}."
+        f"It's currently {temp} {temp_unit} and {condition} in {location_name}, "
+        f"with wind around {wind} {wind_unit}."
     )
 
 

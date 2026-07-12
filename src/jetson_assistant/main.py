@@ -14,8 +14,8 @@ from jetson_assistant.audio.wake_word import (
     is_wake_phrase_only,
     warmup as warmup_wake_word,
 )
-from jetson_assistant.audio.capture import record_utterance, warmup as warmup_vad
-from jetson_assistant.services import stt_client, tts_client
+from jetson_assistant.audio.capture import record_utterance, record_fixed_seconds, warmup as warmup_vad
+from jetson_assistant.services import stt_client, tts_client, music_client
 from jetson_assistant import intent_router
 from jetson_assistant.conversation import ConversationHistory
 from jetson_assistant.log_fmt import info as log_line, warning as log_warn, setup_logging
@@ -30,12 +30,14 @@ from jetson_assistant.config import (
     WAKE_WORD_POST_SPEECH_COOLDOWN_SECONDS,
     WAKE_WORD_PRE_RECORD_DELAY_SECONDS,
     RESOURCE_LOG_INTERVAL_SECONDS,
+    ASSISTANT_BARGE_IN,
 )
 from jetson_assistant.resource_monitor import ResourceMonitor
 setup_logging()
 log = logging.getLogger("assistant")
 
 _QUESTION_END = re.compile(r"[^.!?]*\?\s*$")
+_WAKE_IN_TEXT = re.compile(r"\b(?:hey\s+)?jarvis\b", re.IGNORECASE)
 
 # Quiet noisy HTTP loggers from ddgs/httpx during web search
 for _logger_name in ("ddgs", "httpx", "httpcore", "primp"):
@@ -121,6 +123,10 @@ def startup_check() -> None:
                 log, "Startup",
                 f"defaults: no location, timezone={TIMEZONE}, assistant={ASSISTANT_NAME}",
             )
+    log_line(
+        log, "Startup",
+        f"barge-in={'on' if ASSISTANT_BARGE_IN else 'off'}",
+    )
 
 
 def _logged_reply_chunks(chunks, parts: list[str]):
@@ -133,22 +139,53 @@ def _logged_reply_chunks(chunks, parts: list[str]):
         yield chunk
 
 
+def _confirm_barge_in_wake_phrase(candidate_pcm=None) -> bool:
+    """
+    Confirm barge-in only if STT hears the wake phrase ("jarvis").
+
+    Uses the mic audio around the wake-word candidate first (already contains
+    a real "hey Jarvis"). Speaker-bleed false alarms transcribe as TTS/noise
+    without "jarvis" and are ignored — no need to cut the reply.
+    """
+    pcm = candidate_pcm
+    if pcm is None or len(pcm) < 3200:
+        time.sleep(0.35)
+        pcm = record_fixed_seconds(1.3)
+    text = (stt_client.transcribe(pcm) or "").strip()
+    if not text:
+        log_line(log, "Wake", "barge-in rejected (no speech in candidate audio)")
+        return False
+    if _WAKE_IN_TEXT.search(text):
+        log_line(log, "Wake", f"barge-in confirmed ({text!r})")
+        return True
+    log_line(log, "Wake", f"barge-in rejected (heard {text!r})")
+    return False
+
+
 def _speak_with_barge_in(chunks, *, enable_barge_in: bool) -> bool:
     """
     Play TTS, optionally listening for wake-word barge-in.
-    Returns True if user interrupted with a new wake word.
+    Returns True if user interrupted with a confirmed wake phrase.
     """
     if not enable_barge_in:
         tts_client.speak_stream(chunks)
         return False
 
     stop_listener = threading.Event()
-    interrupted = threading.Event()
+    confirmed = threading.Event()
 
     def _wake_listener():
-        if listen_for_interrupt(stop_listener):
-            interrupted.set()
-            tts_client.stop()
+        # Loop so a rejected candidate can be followed by a real wake later.
+        while not stop_listener.is_set():
+            candidate_pcm = listen_for_interrupt(stop_listener)
+            if candidate_pcm is None or stop_listener.is_set():
+                return
+            log_line(log, "Wake", "barge-in candidate — confirming wake phrase")
+            if _confirm_barge_in_wake_phrase(candidate_pcm):
+                confirmed.set()
+                tts_client.stop()
+                return
+            # False alarm — keep speaking; resume listening for a real wake.
 
     listener = threading.Thread(target=_wake_listener, daemon=True)
     listener.start()
@@ -156,9 +193,9 @@ def _speak_with_barge_in(chunks, *, enable_barge_in: bool) -> bool:
         tts_client.speak_stream(chunks)
     finally:
         stop_listener.set()
-        listener.join(timeout=2.0)
+        listener.join(timeout=3.0)
 
-    return interrupted.is_set()
+    return confirmed.is_set()
 
 
 def _assistant_asked_question(reply: str) -> bool:
@@ -209,15 +246,25 @@ def process_interaction(
 
     log_line(log, "Heard", user_text)
 
+    if intent_router.is_dismiss_command(user_text):
+        log_line(log, "Route", "dismiss (no reply)")
+        return "done"
+
     chunks = intent_router.iter_reply(user_text, history=conversation.as_list())
     reply_parts: list[str] = []
+    turn_ends = intent_router.ends_turn(user_text)
 
     t0 = time.perf_counter()
     interrupted = _speak_with_barge_in(
         _logged_reply_chunks(chunks, reply_parts),
-        enable_barge_in=intent_router.allows_barge_in(user_text),
+        enable_barge_in=ASSISTANT_BARGE_IN and intent_router.allows_barge_in(user_text),
     )
     t_tts = time.perf_counter() - t0
+
+    # Start music only after the spoken announcement, so playback does not
+    # bleed into the mic and trigger another conversational turn.
+    if music_client.begin_queued_play():
+        turn_ends = True
 
     reply_text = " ".join(reply_parts)
     if reply_text:
@@ -229,9 +276,11 @@ def process_interaction(
         f"total={time.perf_counter() - t_start:.2f}s",
     )
 
-    if interrupted:
+    if interrupted and not turn_ends:
         log_line(log, "Status", "barge-in, listening again")
         return "barge_in"
+    if turn_ends:
+        return "done"
     if reply_text and _assistant_asked_question(reply_text):
         return "follow_up"
     return "done"
@@ -251,20 +300,34 @@ def run() -> None:
 
     while True:
         log_line(log, "Status", "ready, waiting for wake word")
-        # One mic stream: detect wake and keep capturing the spoken query.
-        pcm = listen_wake_then_utterance()
-        log_line(log, "Wake", "detected")
+        ducked = False
 
-        result = process_interaction(conversation, pcm=pcm)
-        while result in ("barge_in", "follow_up"):
-            if result == "follow_up":
-                log_line(log, "Status", "listening for your reply (no wake word needed)")
-                time.sleep(WAKE_WORD_PRE_RECORD_DELAY_SECONDS)
-            result = process_interaction(conversation)
+        def _on_wake():
+            nonlocal ducked
+            log_line(log, "Wake", "detected — listening")
+            if music_client.is_playing():
+                ducked = music_client.duck(music_client.DUCK_PERCENT)
 
-        # Short cooldown so TTS echo does not re-trigger wake (do not also
-        # ignore the first N seconds inside the wake listener).
-        time.sleep(WAKE_WORD_POST_SPEECH_COOLDOWN_SECONDS)
+        # One mic stream: capture starts on first wake hit (no gap).
+        pcm = listen_wake_then_utterance(on_wake=_on_wake)
+
+        try:
+            result = process_interaction(conversation, pcm=pcm)
+            while result in ("barge_in", "follow_up"):
+                if result == "follow_up":
+                    log_line(log, "Status", "listening for your reply (no wake word needed)")
+                # No pre-record sleep — open the mic immediately.
+                result = process_interaction(conversation)
+        finally:
+            if ducked:
+                music_client.unduck()
+
+        # Cooldown so TTS / BT echo does not immediately re-trigger wake.
+        cooldown = WAKE_WORD_POST_SPEECH_COOLDOWN_SECONDS
+        if result == "empty":
+            # False wake (music/TTS bleed) — wait a bit longer before listening again.
+            cooldown = max(cooldown, 2.0)
+        time.sleep(cooldown)
 
 
 if __name__ == "__main__":
