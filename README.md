@@ -2,31 +2,15 @@
 
 ## Tech showcase
 
-<p align="center">
-  <a href="https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/"><img src="https://img.shields.io/badge/NVIDIA-Jetson-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="NVIDIA Jetson" /></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" /></a>
-  <a href="https://github.com/ggerganov/whisper.cpp"><img src="https://img.shields.io/badge/whisper.cpp-STT-1C1C1C?style=for-the-badge&logo=openai&logoColor=white" alt="whisper.cpp" /></a>
-  <a href="https://github.com/ggerganov/llama.cpp"><img src="https://img.shields.io/badge/llama.cpp-LLM-000000?style=for-the-badge&logo=meta&logoColor=white" alt="llama.cpp" /></a>
-  <a href="https://qwenlm.github.io/"><img src="https://img.shields.io/badge/Qwen2.5-3B_Instruct-FF6A00?style=for-the-badge&logo=alibabadotcom&logoColor=white" alt="Qwen" /></a>
-  <a href="https://github.com/rhasspy/piper"><img src="https://img.shields.io/badge/Piper-TTS-5B2C6F?style=for-the-badge&logo=soundcloud&logoColor=white" alt="Piper" /></a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/dscripka/openWakeWord"><img src="https://img.shields.io/badge/openWakeWord-hey_jarvis-0D9488?style=for-the-badge&logo=googleassistant&logoColor=white" alt="openWakeWord" /></a>
-  <a href="https://github.com/snakers4/silero-vad"><img src="https://img.shields.io/badge/Silero-VAD-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white" alt="Silero VAD" /></a>
-  <a href="https://docs.astral.sh/uv/"><img src="https://img.shields.io/badge/uv-package_manager-DE5FE9?style=for-the-badge&logo=python&logoColor=white" alt="uv" /></a>
-  <a href="https://pipewire.org/"><img src="https://img.shields.io/badge/PipeWire-Audio-7C3AED?style=for-the-badge&logo=linux&logoColor=white" alt="PipeWire" /></a>
-  <a href="https://mpv.io/"><img src="https://img.shields.io/badge/mpv-Music-6B46C1?style=for-the-badge&logo=vlcmediaplayer&logoColor=white" alt="mpv" /></a>
-  <a href="https://github.com/yt-dlp/yt-dlp"><img src="https://img.shields.io/badge/yt--dlp-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="yt-dlp" /></a>
-</p>
-
-<p align="center">
-  <a href="https://open-meteo.com/"><img src="https://img.shields.io/badge/Open--Meteo-Weather-0EA5E9?style=for-the-badge&logo=cloud&logoColor=white" alt="Open-Meteo" /></a>
-  <a href="https://www.openstreetmap.org/"><img src="https://img.shields.io/badge/OpenStreetMap-Store_hours-7EBC6F?style=for-the-badge&logo=openstreetmap&logoColor=white" alt="OpenStreetMap" /></a>
-  <a href="https://duckduckgo.com/"><img src="https://img.shields.io/badge/DuckDuckGo-Search-DE5833?style=for-the-badge&logo=duckduckgo&logoColor=white" alt="DuckDuckGo" /></a>
-  <a href="https://www.navidrome.org/"><img src="https://img.shields.io/badge/Navidrome-Optional-039BE5?style=for-the-badge&logo=audiomack&logoColor=white" alt="Navidrome" /></a>
-  <a href="https://developer.nvidia.com/cuda-zone"><img src="https://img.shields.io/badge/CUDA-GPU_offload-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="CUDA" /></a>
-</p>
+| Platform | Voice stack | Integrations |
+|:---------|:------------|:-------------|
+| <a href="https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/"><img src="https://img.shields.io/badge/NVIDIA-Jetson-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="NVIDIA Jetson" /></a> | <a href="https://github.com/ggerganov/whisper.cpp"><img src="https://img.shields.io/badge/whisper.cpp-STT-1C1C1C?style=for-the-badge&logo=openai&logoColor=white" alt="whisper.cpp" /></a> | <a href="https://pipewire.org/"><img src="https://img.shields.io/badge/PipeWire-Audio-7C3AED?style=for-the-badge&logo=linux&logoColor=white" alt="PipeWire" /></a> |
+| <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" /></a> | <a href="https://github.com/ggerganov/llama.cpp"><img src="https://img.shields.io/badge/llama.cpp-LLM-000000?style=for-the-badge&logo=meta&logoColor=white" alt="llama.cpp" /></a> | <a href="https://mpv.io/"><img src="https://img.shields.io/badge/mpv-Music-6B46C1?style=for-the-badge&logo=vlcmediaplayer&logoColor=white" alt="mpv" /></a> |
+| <a href="https://developer.nvidia.com/cuda-zone"><img src="https://img.shields.io/badge/CUDA-GPU_offload-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="CUDA" /></a> | <a href="https://qwenlm.github.io/"><img src="https://img.shields.io/badge/Qwen2.5-3B_Instruct-FF6A00?style=for-the-badge&logo=alibabadotcom&logoColor=white" alt="Qwen" /></a> | <a href="https://github.com/yt-dlp/yt-dlp"><img src="https://img.shields.io/badge/yt--dlp-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="yt-dlp" /></a> |
+| <a href="https://docs.astral.sh/uv/"><img src="https://img.shields.io/badge/uv-package_manager-DE5FE9?style=for-the-badge&logo=python&logoColor=white" alt="uv" /></a> | <a href="https://github.com/rhasspy/piper"><img src="https://img.shields.io/badge/Piper-TTS-5B2C6F?style=for-the-badge&logo=soundcloud&logoColor=white" alt="Piper" /></a> | <a href="https://open-meteo.com/"><img src="https://img.shields.io/badge/Open--Meteo-Weather-0EA5E9?style=for-the-badge&logo=cloud&logoColor=white" alt="Open-Meteo" /></a> |
+| | <a href="https://github.com/dscripka/openWakeWord"><img src="https://img.shields.io/badge/openWakeWord-hey_jarvis-0D9488?style=for-the-badge&logo=googleassistant&logoColor=white" alt="openWakeWord" /></a> | <a href="https://www.openstreetmap.org/"><img src="https://img.shields.io/badge/OpenStreetMap-Store_hours-7EBC6F?style=for-the-badge&logo=openstreetmap&logoColor=white" alt="OpenStreetMap" /></a> |
+| | <a href="https://github.com/snakers4/silero-vad"><img src="https://img.shields.io/badge/Silero-VAD-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white" alt="Silero VAD" /></a> | <a href="https://duckduckgo.com/"><img src="https://img.shields.io/badge/DuckDuckGo-Search-DE5833?style=for-the-badge&logo=duckduckgo&logoColor=white" alt="DuckDuckGo" /></a> |
+| | | <a href="https://www.navidrome.org/"><img src="https://img.shields.io/badge/Navidrome-Optional-039BE5?style=for-the-badge&logo=audiomack&logoColor=white" alt="Navidrome" /></a> |
 
 ---
 
