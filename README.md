@@ -1,15 +1,5 @@
 # Jetson Voice Assistant
 
-![Architecture diagram](docs/architecture.svg)
-
-A local-first, offline-friendly voice assistant. Say **"hey jarvis"**, ask a question, and get a spoken reply - wake word, speech-to-text, routing, language model, and text-to-speech all run on your own hardware.
-
-Built for **NVIDIA Jetson Orin Nano** (also runnable on Raspberry Pi and Linux desktops). Develop on Windows if you like; deploy on ARM when you are ready.
-
-The trick that keeps a small 3B model useful: a **hybrid intent router** answers factual requests (time, weather, store hours, music, volume, web search) from real data sources and only asks the LLM to *phrase* the answer or handle open-ended chat. The model never guesses store hours or weather from memory.
-
----
-
 ## Tech showcase
 
 <p align="center">
@@ -37,6 +27,16 @@ The trick that keeps a small 3B model useful: a **hybrid intent router** answers
   <a href="https://www.navidrome.org/"><img src="https://img.shields.io/badge/Navidrome-Optional-039BE5?style=for-the-badge&logo=audiomack&logoColor=white" alt="Navidrome" /></a>
   <a href="https://developer.nvidia.com/cuda-zone"><img src="https://img.shields.io/badge/CUDA-GPU_offload-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="CUDA" /></a>
 </p>
+
+---
+
+![Architecture diagram](docs/architecture.svg)
+
+A local-first, offline-friendly voice assistant. Say **"hey jarvis"**, ask a question, and get a spoken reply - wake word, speech-to-text, routing, language model, and text-to-speech all run on your own hardware.
+
+Built for **NVIDIA Jetson Orin Nano** (also runnable on Raspberry Pi and Linux desktops). Develop on Windows if you like; deploy on ARM when you are ready.
+
+The trick that keeps a small 3B model useful: a **hybrid intent router** answers factual requests (time, weather, store hours, music, volume, web search) from real data sources and only asks the LLM to *phrase* the answer or handle open-ended chat. The model never guesses store hours or weather from memory.
 
 | Layer | What we use |
 |-------|-------------|
