@@ -27,10 +27,20 @@ def warmup() -> None:
             ) from exc
 
 
+def speech_prob(chunk: np.ndarray) -> float:
+    """Silero speech probability for one 512-sample int16/float chunk @ 16 kHz."""
+    warmup()
+    assert _vad_model is not None
+    audio_float = chunk.flatten().astype(np.float32)
+    if np.issubdtype(chunk.dtype, np.integer):
+        audio_float = audio_float / 32768.0
+    if len(audio_float) < 512:
+        return 0.0
+    return float(_vad_model(torch.from_numpy(audio_float[:512]), SAMPLE_RATE).item())
+
+
 def record_utterance() -> np.ndarray:
     """Records mic audio until silence follows speech. Returns int16 PCM."""
-    global _vad_model
-
     warmup()
 
     frames = []
@@ -45,34 +55,29 @@ def record_utterance() -> np.ndarray:
         channels=1,
         dtype="int16",
         device=MIC_DEVICE,
+        blocksize=chunk_size,
     )
     stream.start()
     heard_speech = False
 
-    for chunk_index in range(max_chunks):
-        chunk, _ = stream.read(chunk_size)
-        frames.append(chunk)
+    try:
+        for chunk_index in range(max_chunks):
+            chunk, _ = stream.read(chunk_size)
+            frames.append(chunk)
 
-        # Flatten the chunk to 1D (512,) so Silero can read the sample length properly
-        audio_float = chunk.flatten().astype(np.float32) / 32768.0
-
-        # Double check to guard against fractional chunks from the audio hardware
-        if len(audio_float) >= 512:
-            speech_prob = _vad_model(torch.from_numpy(audio_float[:512]), SAMPLE_RATE).item()
-        else:
-            speech_prob = 0.0
-
-        if speech_prob > 0.5:
-            heard_speech = True
-            silence_chunks = 0
-        elif heard_speech:
-            silence_chunks += 1
-            if silence_chunks >= silence_chunks_needed:
+            if speech_prob(chunk) > 0.5:
+                heard_speech = True
+                silence_chunks = 0
+            elif heard_speech:
+                silence_chunks += 1
+                if silence_chunks >= silence_chunks_needed:
+                    break
+            elif chunk_index >= no_speech_chunks:
                 break
-        elif chunk_index >= no_speech_chunks:
-            # Nothing spoken within a few seconds — stop waiting (don't hang 12s)
-            break
+    finally:
+        stream.stop()
+        stream.close()
 
-    stream.stop()
-    stream.close()
+    if not frames:
+        return np.zeros(0, dtype=np.int16)
     return np.concatenate(frames).flatten()

@@ -8,10 +8,11 @@ from urllib.parse import urlparse, urlunparse
 import requests
 
 from jetson_assistant.audio.wake_word import (
-    listen_for_wake_word,
     listen_for_interrupt,
+    listen_wake_then_utterance,
     strip_wake_phrase,
     is_wake_phrase_only,
+    warmup as warmup_wake_word,
 )
 from jetson_assistant.audio.capture import record_utterance, warmup as warmup_vad
 from jetson_assistant.services import stt_client, tts_client
@@ -31,7 +32,6 @@ from jetson_assistant.config import (
     RESOURCE_LOG_INTERVAL_SECONDS,
 )
 from jetson_assistant.resource_monitor import ResourceMonitor
-
 setup_logging()
 log = logging.getLogger("assistant")
 
@@ -94,6 +94,9 @@ def startup_check() -> None:
     t0 = time.perf_counter()
     warmup_vad()
     log_line(log, "Startup", f"VAD ready ({time.perf_counter() - t0:.2f}s)")
+    t0 = time.perf_counter()
+    warmup_wake_word()
+    log_line(log, "Startup", f"wake-word ready ({time.perf_counter() - t0:.2f}s)")
     if PIPER_VOICE:
         t0 = time.perf_counter()
         tts_client.warmup()
@@ -163,21 +166,30 @@ def _assistant_asked_question(reply: str) -> bool:
     return bool(_QUESTION_END.search(reply.strip()))
 
 
-def process_interaction(conversation: ConversationHistory) -> str:
+def process_interaction(
+    conversation: ConversationHistory,
+    *,
+    pcm=None,
+) -> str:
     """
     Handle one user utterance (after wake word, or follow-up without wake word).
+    If pcm is provided, skip recording (used for continuous wake→utterance capture).
     Returns:
         "barge_in"  — user interrupted mid-response; listen again immediately
         "follow_up" — assistant asked a question; listen again without wake word
         "done"      — interaction finished; require wake word for next request
         "empty"     — no usable speech detected
     """
-    log_line(log, "Listen", "recording...")
     t_start = time.perf_counter()
 
-    t0 = time.perf_counter()
-    pcm = record_utterance()
-    t_record = time.perf_counter() - t0
+    if pcm is None:
+        log_line(log, "Listen", "recording...")
+        t0 = time.perf_counter()
+        pcm = record_utterance()
+        t_record = time.perf_counter() - t0
+    else:
+        t_record = 0.0
+        log_line(log, "Listen", "using continuous wake→utterance capture")
 
     t0 = time.perf_counter()
     raw_text = stt_client.transcribe(pcm)
@@ -213,7 +225,8 @@ def process_interaction(conversation: ConversationHistory) -> str:
 
     log_line(
         log, "Timing",
-        f"record={t_record:.2f}s  stt={t_stt:.2f}s  tts={t_tts:.2f}s  total={time.perf_counter() - t_start:.2f}s",
+        f"record={t_record:.2f}s  stt={t_stt:.2f}s  tts={t_tts:.2f}s  "
+        f"total={time.perf_counter() - t_start:.2f}s",
     )
 
     if interrupted:
@@ -238,20 +251,19 @@ def run() -> None:
 
     while True:
         log_line(log, "Status", "ready, waiting for wake word")
-        listen_for_wake_word()
+        # One mic stream: detect wake and keep capturing the spoken query.
+        pcm = listen_wake_then_utterance()
         log_line(log, "Wake", "detected")
-        time.sleep(WAKE_WORD_PRE_RECORD_DELAY_SECONDS)
 
-        while True:
-            result = process_interaction(conversation)
-            if result == "barge_in":
-                continue
+        result = process_interaction(conversation, pcm=pcm)
+        while result in ("barge_in", "follow_up"):
             if result == "follow_up":
                 log_line(log, "Status", "listening for your reply (no wake word needed)")
                 time.sleep(WAKE_WORD_PRE_RECORD_DELAY_SECONDS)
-                continue
-            break
+            result = process_interaction(conversation)
 
+        # Short cooldown so TTS echo does not re-trigger wake (do not also
+        # ignore the first N seconds inside the wake listener).
         time.sleep(WAKE_WORD_POST_SPEECH_COOLDOWN_SECONDS)
 
 
