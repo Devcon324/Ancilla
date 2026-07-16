@@ -269,6 +269,18 @@ tests/
 - `mpv` must be on `PATH`; music is single-stream (new play replaces the previous track).
 - YouTube music is a hobby path (`MUSIC_YOUTUBE_ENABLED`); turn it off or remove `youtube_music.py` if you do not want it.
 
+## Releases (Jetson Orin servers)
+
+Prebuilt CUDA `whisper-server` / `llama-server` bundles can be cut on a Jetson with:
+
+```bash
+./scripts/package-jetson-release.sh
+# optional signing:
+# ANCILLA_RELEASE_GPG_KEY=YOURKEYID ./scripts/package-jetson-release.sh
+```
+
+Artifacts go to `dist/` (`.tar.gz` + `.sha256`, optional `.asc`). Users must verify checksums before install. Full trust model and steps: [`docs/setup/secure-releases.md`](docs/setup/secure-releases.md). Models are downloaded separately with pinned SHA-256 via `./scripts/download-models.sh`.
+
 ---
 
 ## Footnotes - recommended models by hardware
