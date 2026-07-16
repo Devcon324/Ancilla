@@ -9,7 +9,7 @@
   </defs>
 
   <rect x="0" y="0" width="960" height="740" fill="#f8fafc"/>
-  <text x="30" y="36" font-size="22" font-weight="700" fill="#0f172a">Jetson Voice Assistant - pipeline</text>
+  <text x="30" y="36" font-size="22" font-weight="700" fill="#0f172a">Ancilla - pipeline</text>
   <text x="30" y="58" font-size="13" fill="#64748b">mic -&gt; wake word -&gt; VAD capture -&gt; whisper.cpp -&gt; hybrid router -&gt; Piper TTS</text>
 
   <!-- ===== Capture / pipeline spine (left) ===== -->

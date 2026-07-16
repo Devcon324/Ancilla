@@ -1,4 +1,4 @@
-# Jetson Voice Assistant
+# Ancilla
 
 ## Tech showcase
 
@@ -16,7 +16,7 @@
 
 ![Architecture diagram](docs/architecture.svg)
 
-A local-first, offline-friendly voice assistant. Say **"hey jarvis"**, ask a question, and get a spoken reply - wake word, speech-to-text, routing, language model, and text-to-speech all run on your own hardware.
+**Ancilla** is a local-first, offline-friendly voice assistant. Say **"hey jarvis"**, ask a question, and get a spoken reply - wake word, speech-to-text, routing, language model, and text-to-speech all run on your own hardware.
 
 Built for **NVIDIA Jetson Orin Nano** (also runnable on Raspberry Pi and Linux desktops). Develop on Windows if you like; deploy on ARM when you are ready.
 
@@ -71,26 +71,26 @@ Flow: your voice is captured after the wake word, transcribed locally by whisper
 
 | Stage | Module | Talks to |
 |-------|--------|----------|
-| Wake word | `audio/wake_word.py` | openWakeWord (`hey_jarvis`), always listening |
-| Capture | `audio/capture.py` | Silero VAD for end-of-speech detection |
-| Speech-to-text | `services/stt_client.py` | **whisper.cpp** `whisper-server` on `:8080` |
-| Routing | `intent_router.py` | keyword/regex fast paths + LLM tool-select |
-| Language model | `services/llm_client.py` | **llama.cpp** `llama-server` on `:8081` |
-| Text-to-speech | `services/tts_client.py` | **Piper** in-process + `.onnx` voice |
-| Conversation | `conversation.py` | short rolling history for follow-ups |
-| Orchestration | `main.py` / `cli.py` | wake -> record -> STT -> route -> speak loop |
+| Wake word | `ancilla/audio/wake_word.py` | openWakeWord (`hey_jarvis`), always listening |
+| Capture | `ancilla/audio/capture.py` | Silero VAD for end-of-speech detection |
+| Speech-to-text | `ancilla/services/stt_client.py` | **whisper.cpp** `whisper-server` on `:8080` |
+| Routing | `ancilla/intent_router.py` | keyword/regex fast paths + LLM tool-select |
+| Language model | `ancilla/services/llm_client.py` | **llama.cpp** `llama-server` on `:8081` |
+| Text-to-speech | `ancilla/services/tts_client.py` | **Piper** in-process + `.onnx` voice |
+| Conversation | `ancilla/conversation.py` | short rolling history for follow-ups |
+| Orchestration | `ancilla/main.py` / `cli.py` | wake -> record -> STT -> route -> speak loop |
 
 ### Tools the router can reach
 
 | Tool | Module | Backend | API key |
 |------|--------|---------|---------|
-| Clock | `intent_router.py` | local system time + timezone | none |
-| Weather | `services/weather_client.py` | Open-Meteo | none |
-| Store hours | `services/store_hours_client.py` | OpenStreetMap / Overpass | none |
-| Web search | `services/search_client.py` | DuckDuckGo via `ddgs` | none |
-| Volume | `services/volume_client.py` | PipeWire `wpctl` | none |
-| Music | `services/music_client.py` | Navidrome / YouTube / radio + `mpv` | Navidrome optional |
-| General chat | `services/llm_client.py` | local llama.cpp model | none |
+| Clock | `ancilla/intent_router.py` | local system time + timezone | none |
+| Weather | `ancilla/services/weather_client.py` | Open-Meteo | none |
+| Store hours | `ancilla/services/store_hours_client.py` | OpenStreetMap / Overpass | none |
+| Web search | `ancilla/services/search_client.py` | DuckDuckGo via `ddgs` | none |
+| Volume | `ancilla/services/volume_client.py` | PipeWire `wpctl` | none |
+| Music | `ancilla/services/music_client.py` | Navidrome / YouTube / radio + `mpv` | Navidrome optional |
+| General chat | `ancilla/services/llm_client.py` | local llama.cpp model | none |
 
 ## Common abilities
 
@@ -135,8 +135,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 Clone and create the Python env:
 
 ```bash
-git clone https://github.com/<you>/jetson-nano-jarvis.git
-cd jetson-nano-jarvis
+git clone https://github.com/Devcon324/Ancilla.git
+cd Ancilla
 uv sync
 cp .env.example .env
 cp config/defaults.example.json config/defaults.json
@@ -199,7 +199,7 @@ ASSISTANT_MIC_DEVICE=pipewire
 ASSISTANT_SPEAKER_DEVICE=pipewire
 ```
 
-Leave blank to use the system default. Plug in a USB mic; Bluetooth speakers work but may need A2DP enabled (see `docs/jetson-bluetooth-speaker-ssh.md`).
+Leave blank to use the system default. Plug in a USB mic; Bluetooth speakers work but may need A2DP enabled (see `docs/jetson/bluetooth-speaker-ssh.md`).
 
 ### 5. Start servers and the assistant
 
@@ -219,7 +219,7 @@ Three terminals (or wrap the servers in `systemd`):
 # On Pi/CPU: use --n-gpu-layers 0
 
 # Terminal 3 - assistant
-uv run jetson-assistant
+uv run ancilla
 ```
 
 Say **"hey jarvis"**, then try `what time is it`.
@@ -230,7 +230,7 @@ Optional: set `RESOURCE_LOG_INTERVAL_SECONDS=30` in `.env` to watch CPU/RAM whil
 
 ## Setup - Windows (development)
 
-See [`docs/windows-demo-next-steps.md`](docs/windows-demo-next-steps.md) for the full walkthrough.
+See [`docs/setup/windows-demo.md`](docs/setup/windows-demo.md) for the full walkthrough.
 
 ```powershell
 uv sync
@@ -241,7 +241,7 @@ copy config\defaults.example.json config\defaults.json
 Download Windows `whisper-server` / `llama-server` binaries, point `.env` at your Piper voice, start both servers on `:8080` / `:8081`, then:
 
 ```powershell
-uv run jetson-assistant
+uv run ancilla
 ```
 
 ---
@@ -249,16 +249,17 @@ uv run jetson-assistant
 ## Project layout
 
 ```
-src/jetson_assistant/
-  audio/          wake_word.py, capture.py
-  services/       stt, llm, tts, weather, store_hours, music, volume, search, youtube
-  intent_router.py
-  conversation.py
-  main.py / cli.py
-  config.py
-config/           defaults.example.json
-docs/             architecture, Jetson audio / Bluetooth guides
-models/           whisper / llm / piper (gitignored binaries)
+src/ancilla/           installable Python package
+  audio/               wake word, capture, VAD helpers
+  services/            STT, LLM, TTS, weather, music, search, ...
+  cli.py / main.py     entrypoints (uv run ancilla)
+  intent_router.py     hybrid routing
+  config.py            .env + config/defaults.json
+config/                defaults.example.json (copy to defaults.json)
+docs/                  architecture.svg, jetson/, setup/
+scripts/               run, setup-env, download-models, audio-test, status, ...
+models/                whisper / llm / piper (gitignored)
+tests/
 ```
 
 ## Known rough edges

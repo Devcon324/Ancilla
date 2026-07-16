@@ -10,7 +10,7 @@ Verifies that speak_stream overlaps synthesis with playback correctly:
 """
 import numpy as np
 
-from jetson_assistant.services import tts_client
+from ancilla.services import tts_client
 
 
 def run() -> None:

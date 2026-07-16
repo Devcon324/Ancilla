@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "jetson-voice-assistant"
+name = "ancilla"
 version = "0.1.0"
-description = "Local-first voice assistant for Windows development and Jetson Orin Nano deployment"
+description = "Ancilla - local-first voice assistant for Jetson Orin Nano, Raspberry Pi, and Linux"
 requires-python = ">=3.11,<3.12"
 dependencies = [
   "numpy",
@@ -26,11 +26,10 @@ dependencies = [
 ]
 
 [project.scripts]
-jetson-assistant = "jetson_assistant.cli:main"
+ancilla = "ancilla.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
