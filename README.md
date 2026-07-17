@@ -142,7 +142,7 @@ cp .env.example .env
 cp config/defaults.example.json config/defaults.json
 ```
 
-Edit `config/defaults.json` (city, timezone) and `.env` (`PIPER_VOICE`, audio devices).
+Edit `config/defaults.json` (city, timezone) and `.env` (`PIPER_VOICE`). Set mic/speaker in step 4 below.
 
 ### 2. Download models
 
@@ -185,21 +185,106 @@ cmake --build ~/llama.cpp/build -j"$(nproc)" --config Release
 
 **Raspberry Pi / CPU-only Linux** - omit `-DGGML_CUDA=1` (plain `cmake -S ... -B ...` then build). Expect slower STT/LLM; use the smaller model set in the footnotes.
 
-### 4. Audio devices
+### 4. Mic + Bluetooth speaker
+
+Goal: USB mic in, Bluetooth speaker out, then tell Ancilla to use PipeWire.
+
+Run these on the machine (if SSH'd into a Jetson, run the exports first every session, or put them in `~/.bashrc`):
 
 ```bash
-# List capture/playback devices
-uv run python -c "import sounddevice as sd; print(sd.query_devices())"
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
 ```
 
-On modern Jetson/Ubuntu, PipeWire is a good default:
+**One-time on Jetson (fixes thin phone-call Bluetooth audio):**
+
+```bash
+sudo tee /etc/systemd/system/bluetooth.service.d/zz-a2dp-enable.conf >/dev/null <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/libexec/bluetooth/bluetoothd --noplugin=audio,sap
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart bluetooth
+systemctl --user restart pipewire pipewire-pulse wireplumber
+```
+
+**1. Pair the Bluetooth speaker**
+
+Put the speaker in pairing mode, then:
+
+```bash
+bluetoothctl
+power on
+agent on
+default-agent
+scan on
+```
+
+When you see your speaker (`[NEW] Device AA:BB:CC:DD:EE:FF Name`):
+
+```bash
+pair AA:BB:CC:DD:EE:FF
+trust AA:BB:CC:DD:EE:FF
+connect AA:BB:CC:DD:EE:FF
+scan off
+quit
+```
+
+**2. Make that speaker the default output**
+
+```bash
+wpctl status
+```
+
+Find your speaker under Sinks, copy its number, then:
+
+```bash
+wpctl set-default <SINK_ID>
+wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.8
+pw-play /usr/share/sounds/alsa/Front_Center.wav
+```
+
+You should hear the sample. If not, reconnect (`bluetoothctl connect AA:BB:CC:DD:EE:FF`) and set-default again.
+
+**3. Plug in the USB mic and make it the default input**
+
+```bash
+arecord -l
+wpctl status
+```
+
+Find the USB mic under Sources, copy its number, then:
+
+```bash
+wpctl set-default <SOURCE_ID>
+wpctl set-volume @DEFAULT_AUDIO_SOURCE@ 1.0
+arecord -f S16_LE -r 16000 -c 1 -d 3 /tmp/mic-test.wav
+pw-play /tmp/mic-test.wav
+```
+
+Speak during the recording. You should hear yourself back on the Bluetooth speaker.
+
+**4. Point Ancilla at PipeWire**
+
+In `.env`:
 
 ```bash
 ASSISTANT_MIC_DEVICE=pipewire
 ASSISTANT_SPEAKER_DEVICE=pipewire
 ```
 
-Leave blank to use the system default. Plug in a USB mic; Bluetooth speakers work but may need A2DP enabled (see `docs/jetson/bluetooth-speaker-ssh.md`).
+Use `pipewire` (not the raw USB/hw device name). The USB mic often cannot open at 16 kHz directly; PipeWire resamples for you.
+
+**5. Quick check**
+
+```bash
+bash scripts/audio-test.sh
+```
+
+After reboot: `bluetoothctl connect AA:BB:CC:DD:EE:FF`, then `wpctl set-default` on the speaker and mic again.
+
+If Bluetooth connects but has no sink / stays silent over SSH: see `docs/jetson/bluetooth-speaker-ssh.md`.
 
 ### 5. Start servers and the assistant
 
