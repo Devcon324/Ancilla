@@ -3,6 +3,7 @@ Open-Meteo requires no API key and no signup, which makes it the simplest
 option for a hobby project like this. Swap in Environment Canada or
 OpenWeatherMap later if you want more detail (alerts, radar, etc).
 """
+import logging
 import math
 
 from ancilla.config import (
@@ -16,10 +17,14 @@ from ancilla.config import (
 )
 from ancilla.services.http import SESSION
 
+log = logging.getLogger("assistant.weather")
+
 NO_DEFAULT_LOCATION_MSG = (
     "You don't have a default location set. "
     "Add one in defaults.json, or ask for weather in a specific city."
 )
+WEATHER_FETCH_ERROR_MSG = "I couldn't fetch the weather right now."
+GEOCODE_ERROR_MSG = "I couldn't look up that location right now."
 
 # Canadian province / territory names and common abbreviations
 _CA_REGIONS = {
@@ -79,23 +84,31 @@ def _fetch_forecast(lat: float, lon: float, location_name: str) -> str:
     temp_unit = _TEMP_SPEAK.get(TEMPERATURE_UNIT, "degrees Celsius")
     wind_unit = _WIND_SPEAK.get(WIND_UNIT, WIND_UNIT)
 
-    resp = SESSION.get(
-        "https://api.open-meteo.com/v1/forecast",
-        params={
-            "latitude": lat,
-            "longitude": lon,
-            "current": "temperature_2m,weather_code,wind_speed_10m",
-            "temperature_unit": TEMPERATURE_UNIT,
-            "wind_speed_unit": wind_api,
-        },
-        timeout=5,
-    )
-    resp.raise_for_status()
-    current = resp.json()["current"]
+    try:
+        resp = SESSION.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "current": "temperature_2m,weather_code,wind_speed_10m",
+                "temperature_unit": TEMPERATURE_UNIT,
+                "wind_speed_unit": wind_api,
+            },
+            timeout=5,
+        )
+        resp.raise_for_status()
+        current = resp.json()["current"]
+    except Exception as exc:
+        log.warning("forecast fetch failed: %s", exc)
+        return WEATHER_FETCH_ERROR_MSG
 
-    temp = round(current["temperature_2m"])
-    wind = round(current["wind_speed_10m"])
-    condition = _WMO_CODES.get(current["weather_code"], "unclear conditions")
+    try:
+        temp = round(current["temperature_2m"])
+        wind = round(current["wind_speed_10m"])
+        condition = _WMO_CODES.get(current["weather_code"], "unclear conditions")
+    except (KeyError, TypeError) as exc:
+        log.warning("forecast parse failed: %s", exc)
+        return WEATHER_FETCH_ERROR_MSG
 
     return (
         f"It's currently {temp} {temp_unit} and {condition} in {location_name}, "
@@ -127,13 +140,17 @@ def _parse_place(place: str) -> tuple[str, str | None]:
 
 
 def _geocode_results(query: str) -> list[dict]:
-    resp = SESSION.get(
-        "https://geocoding-api.open-meteo.com/v1/search",
-        params={"name": query, "count": 100, "language": "en", "format": "json"},
-        timeout=5,
-    )
-    resp.raise_for_status()
-    return resp.json().get("results") or []
+    try:
+        resp = SESSION.get(
+            "https://geocoding-api.open-meteo.com/v1/search",
+            params={"name": query, "count": 100, "language": "en", "format": "json"},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        return resp.json().get("results") or []
+    except Exception as exc:
+        log.warning("geocode failed for %r: %s", query, exc)
+        return []
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -281,6 +298,8 @@ def is_weather_error(message: str) -> bool:
     """True for weather_client messages that should be spoken as-is."""
     return (
         message == NO_DEFAULT_LOCATION_MSG
+        or message == WEATHER_FETCH_ERROR_MSG
+        or message == GEOCODE_ERROR_MSG
         or message.startswith("I couldn't find")
         or message.startswith("I couldn't resolve")
     )

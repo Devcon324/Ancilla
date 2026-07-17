@@ -158,17 +158,18 @@ Or leave GDM enabled and rely on `51-disable-logind.lua` + the helper’s GDM ki
 ### 5. Point Jarvis at the speaker
 
 ```bash
-cd ~/github/Ancilla
+cd ~/github/ancilla
 uv run python -c "import sounddevice as sd; print(sd.query_devices())"
 ```
 
-Put the SOUNDBLADE name or index in `.env`:
+Point Ancilla at PipeWire (which routes to the Bluetooth default sink):
 
 ```bash
-ASSISTANT_SPEAKER_DEVICE=SOUNDBLADE
+ASSISTANT_MIC_DEVICE=pipewire
+ASSISTANT_SPEAKER_DEVICE=pipewire
 ```
 
-Prefer the **name** over a numeric index (indexes shift).
+Do not set `ASSISTANT_SPEAKER_DEVICE` to the Bluetooth device name (e.g. `SOUNDBLADE`); that is a PipeWire sink name, not a PortAudio device.
 
 ---
 
@@ -281,7 +282,7 @@ If you hear the sample on the Bluetooth speaker, audio over SSH is working.
 Full speaker + Fifine mic check (play + record + playback):
 
 ```bash
-bash ~/github/Ancilla/scripts/audio-test.sh
+bash ~/github/ancilla/scripts/audio-test.sh
 # or with reconnect:
-bash ~/github/Ancilla/scripts/audio-test.sh --connect
+bash ~/github/ancilla/scripts/audio-test.sh --connect
 ```

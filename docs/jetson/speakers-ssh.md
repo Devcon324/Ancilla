@@ -10,7 +10,7 @@ All commands below run **on the Jetson** after:
 
 ```bash
 ssh devjet@<jetson-host>
-cd ~/github/Ancilla
+cd ~/github/ancilla
 export PATH="$HOME/.local/bin:$PATH"
 ```
 

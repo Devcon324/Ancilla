@@ -273,16 +273,13 @@ def listen_wake_then_utterance(
             break
 
         # --- Phase 2: same stream, VAD endpointing (already capturing) ---
-        silence_chunks = 0
+        # Wake-window audio stays in `utterance` for STT, but do NOT treat it as
+        # command speech — otherwise a short pause after "hey jarvis" ends
+        # recording before the real command.
         silence_needed = int(SILENCE_TIMEOUT_SECONDS * SAMPLE_RATE / VAD_CHUNK_SAMPLES)
         no_speech_chunks = int(NO_SPEECH_TIMEOUT_SECONDS * SAMPLE_RATE / VAD_CHUNK_SAMPLES)
         max_chunks = int(MAX_RECORD_SECONDS * SAMPLE_RATE / VAD_CHUNK_SAMPLES)
-        # Command speech often overlaps the wake windows already in `utterance`.
-        heard_speech = any(
-            len(frame) >= VAD_CHUNK_SAMPLES and _vad_speech(frame[:VAD_CHUNK_SAMPLES])
-            for frame in utterance
-        )
-        # Don't treat wake-phrase-only silence as end-of-utterance yet.
+        heard_speech = False
         silence_chunks = 0
 
         for chunk_index in range(max_chunks):

@@ -97,7 +97,7 @@ def select_tool(user_text: str, history: list[dict] | None = None) -> str:
         log_line(log, "LLM", f"tool-select -> {picked} ({time.perf_counter() - t0:.2f}s)")
         if "web_search" in choice:
             return "web_search"
-    except requests.RequestException as exc:
+    except (requests.RequestException, KeyError, IndexError, TypeError, AttributeError) as exc:
         log_warn(log, "LLM", f"tool-select failed: {exc}")
     return "answer"
 

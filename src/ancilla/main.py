@@ -28,7 +28,6 @@ from ancilla.config import (
     NAVIDROME_USER,
     NAVIDROME_PASS,
     WAKE_WORD_POST_SPEECH_COOLDOWN_SECONDS,
-    WAKE_WORD_PRE_RECORD_DELAY_SECONDS,
     RESOURCE_LOG_INTERVAL_SECONDS,
     ASSISTANT_BARGE_IN,
     ASSISTANT_STARTUP_VOLUME_PERCENT,
@@ -189,10 +188,18 @@ def _speak_with_barge_in(chunks, *, enable_barge_in: bool) -> bool:
             if candidate_pcm is None or stop_listener.is_set():
                 return
             log_line(log, "Wake", "barge-in candidate — confirming wake phrase")
-            if _confirm_barge_in_wake_phrase(candidate_pcm):
-                confirmed.set()
-                tts_client.stop()
-                return
+            # Pause TTS so speaker bleed does not poison the STT confirm.
+            tts_client.pause()
+            try:
+                if stop_listener.is_set():
+                    return
+                if _confirm_barge_in_wake_phrase(candidate_pcm):
+                    confirmed.set()
+                    tts_client.stop()
+                    return
+            finally:
+                if not confirmed.is_set() and not stop_listener.is_set():
+                    tts_client.resume()
             # False alarm — keep speaking; resume listening for a real wake.
 
     listener = threading.Thread(target=_wake_listener, daemon=True)
@@ -337,13 +344,22 @@ def run() -> None:
             # One mic stream: capture starts on first wake hit (no gap).
             pcm = listen_wake_then_utterance(on_wake=_on_wake)
 
+            result = "done"
             try:
                 result = process_interaction(conversation, pcm=pcm)
+                follow_ups = 0
                 while result in ("barge_in", "follow_up"):
                     if result == "follow_up":
+                        follow_ups += 1
+                        if follow_ups > 5:
+                            log_line(log, "Status", "follow-up limit reached")
+                            result = "done"
+                            break
                         log_line(log, "Status", "listening for your reply (no wake word needed)")
-                    # No pre-record sleep — open the mic immediately.
                     result = process_interaction(conversation)
+            except Exception as exc:
+                log_warn(log, "Error", f"interaction failed: {exc}")
+                result = "done"
             finally:
                 if ducked:
                     music_client.unduck()

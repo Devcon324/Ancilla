@@ -13,7 +13,7 @@ All commands below run **on the Jetson** after:
 
 ```bash
 ssh devjet@<jetson-host>
-cd ~/github/Ancilla
+cd ~/github/ancilla
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -156,9 +156,9 @@ Do **not** set `ASSISTANT_MIC_DEVICE` to the raw `hw:2,0` Fifine name on this mi
 ```bash
 jarvis-audio    # speaker sink + Fifine source
 
-bash ~/github/Ancilla/scripts/run.sh
+bash ~/github/ancilla/scripts/run.sh
 # or, if servers already run:
-cd ~/github/Ancilla && uv run ancilla
+cd ~/github/ancilla && uv run ancilla
 ```
 
 Say **"hey jarvis"**, then *"what time is it"*.
@@ -245,11 +245,11 @@ SOUNDBLADE speaker.
 Checks Bluetooth speaker + Fifine mic, plays a sample, records 3s, plays it back:
 
 ```bash
-bash ~/github/Ancilla/scripts/audio-test.sh
+bash ~/github/ancilla/scripts/audio-test.sh
 # reconnect speaker first if needed:
-bash ~/github/Ancilla/scripts/audio-test.sh --connect
+bash ~/github/ancilla/scripts/audio-test.sh --connect
 # detect only (no play/record):
-bash ~/github/Ancilla/scripts/audio-test.sh --no-playback
+bash ~/github/ancilla/scripts/audio-test.sh --no-playback
 ```
 
 ## Related

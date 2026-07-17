@@ -6,7 +6,6 @@ import logging
 import queue
 import subprocess
 import threading
-import time
 from collections.abc import Iterator
 
 import numpy as np
@@ -118,14 +117,15 @@ def _write_blocking(stream, raw_pcm: bytes) -> bool:
         return True
     audio = np.frombuffer(raw_pcm, dtype=np.int16).astype(np.float32) / 32768.0
     block = 2048
+    silence = np.zeros(block, dtype=np.float32)
     for i in range(0, len(audio), block):
         if _stop_event.is_set():
             return False
-        # Hold the stream open but emit silence while paused (barge-in verify).
+        # Hold the stream open and emit silence while paused (barge-in verify).
         while _pause_event.is_set():
             if _stop_event.is_set():
                 return False
-            time.sleep(0.02)
+            stream.write(silence)
         stream.write(audio[i : i + block])
     return True
 

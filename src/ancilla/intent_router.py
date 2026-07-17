@@ -11,7 +11,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from ancilla.config import TIMEZONE, TIME_FORMAT
-from ancilla.log_fmt import info as log_line
+from ancilla.log_fmt import info as log_line, warning as log_warn
 from ancilla.services import (
     weather_client,
     store_hours_client,
@@ -58,6 +58,33 @@ _STORE_INTENT_PATTERNS: list[tuple[re.Pattern[str], str, int]] = [
     ),
     (re.compile(r"\b(is|are)\s+(.+?)\s+(open|closed)\b", re.I), "status", 2),
 ]
+# Pronouns / filler that match the status pattern but are not store names.
+_BAD_STORE_NAMES = frozenset(
+    {
+        "it",
+        "they",
+        "them",
+        "you",
+        "he",
+        "she",
+        "we",
+        "that",
+        "this",
+        "there",
+        "here",
+        "anyone",
+        "someone",
+        "everybody",
+        "everything",
+        "door",
+        "store",
+        "the store",
+        "shop",
+        "the shop",
+        "place",
+        "the place",
+    }
+)
 
 _PLAY_PATTERN = re.compile(r"\bplay\s+(.+)", re.IGNORECASE)
 _STOP_PATTERN = re.compile(
@@ -94,6 +121,9 @@ _VOLUME_SET = re.compile(
     r"(?:"
     r"(?:set|change|adjust|put|make)\s+(?:(?:the|your)\s+)?volume\s*(?:to|at|=)?\s*"
     r"|volume\s*(?:to|at|=)\s*"
+    # "turn the volume up to 50" / "volume down to 20" = absolute, not a step
+    r"|(?:turn|put|set|change|adjust|make)\s+(?:(?:the|your)\s+)?volume\s+(?:up|down)\s+to\s+"
+    r"|volume\s+(?:up|down)\s+to\s+"
     r")"
     r"(?P<num>\d{1,3})\s*(?:%|percent|per\s*cent)?\b",
     re.IGNORECASE,
@@ -165,13 +195,14 @@ _WEATHER_PLACE_PATTERN = re.compile(
     r"(?:weather|temperature|forecast|like).*?(?:in|at|for)\s+(.+?)(?:\?|$|\.)",
     re.IGNORECASE,
 )
+# Clock only — do not match "what time does X close/open".
 _TIME_QUERY = re.compile(
     r"(?:"
-    r"what(?:'s|\s+is)\s+(?:the\s+)?time"
-    r"|what\s+time"
-    r"|time\s+is\s+it"
-    r"|tell\s+me\s+(?:the\s+)?time"
-    r"|current\s+time"
+    r"what(?:'s|\s+is)\s+(?:the\s+)?time(?:\s+is\s+it)?\b"
+    r"|what\s+time\s+is\s+it\b"
+    r"|time\s+is\s+it\b"
+    r"|tell\s+me\s+(?:the\s+)?time\b"
+    r"|current\s+time\b"
     r")",
     re.IGNORECASE,
 )
@@ -268,7 +299,7 @@ def _extract_store_and_intent(text: str) -> tuple[str, str] | None:
         match = pattern.search(normalized)
         if match:
             store_name = _clean_store_name(match.group(group))
-            if store_name:
+            if store_name and store_name not in _BAD_STORE_NAMES:
                 return store_name, intent
     return None
 
@@ -337,6 +368,18 @@ def iter_reply(
     """Yield speakable sentence chunks for TTS (supports streaming LLM path)."""
     text = user_text.strip().lower()
 
+    # Store hours before clock time so "what time does X close" is not stolen.
+    store_info = _extract_store_and_intent(text)
+    if store_info:
+        store_name, intent = store_info
+        log_line(log, "Route", f"store hours ({intent})")
+        try:
+            yield store_hours_client.store_hours(store_name, intent)
+        except Exception as exc:
+            log_warn(log, "Route", f"store hours failed: {exc}")
+            yield "I couldn't look up those store hours right now."
+        return
+
     # Instant replies - no LLM
     if _is_time_query(text):
         log_line(log, "Route", "time")
@@ -359,13 +402,6 @@ def iter_reply(
     if play_match:
         log_line(log, "Route", "music play")
         yield music_client.play_track(play_match.group(1))
-        return
-
-    store_info = _extract_store_and_intent(text)
-    if store_info:
-        store_name, intent = store_info
-        log_line(log, "Route", f"store hours ({intent})")
-        yield store_hours_client.store_hours(store_name, intent)
         return
 
     # Tool-backed paths - LLM phrases verified data

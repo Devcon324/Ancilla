@@ -107,7 +107,7 @@ def lower_volume(step: int = _STEP) -> str:
         current = get_percent()
         if current <= 0:
             return "Volume is already at 0 percent."
-        new = set_percent(current - step)
+        new = set_percent(max(0, current - step))
         return f"Volume is now {new} percent."
     except Exception as exc:
         log_warn(log, "Volume", f"lower failed: {exc}")
