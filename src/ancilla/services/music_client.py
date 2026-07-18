@@ -224,7 +224,7 @@ def begin_queued_play() -> bool:
     if not url:
         return False
     _start_stream(url, volume=100)
-    log_line(log, "Music", "playback started after announcement")
+    log_line(log, "Music", "playback started")
     return True
 
 

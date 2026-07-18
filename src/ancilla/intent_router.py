@@ -421,11 +421,13 @@ def iter_reply(
     tool = llm_client.select_tool(user_text, history=history)
     if tool == "web_search":
         log_line(log, "Route", "web search + llm")
-        results = search_client.search(user_text)
+        query = llm_client.rewrite_search_query(user_text)
+        results = search_client.search(query)
+        # Answer from search alone — chat history dilutes facts on a small model.
         yield from llm_client.ask_stream(
             user_text,
             context=results.context,
-            history=history,
+            history=None,
             source_labels=results.sources or None,
         )
     else:

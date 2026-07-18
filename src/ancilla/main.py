@@ -269,17 +269,39 @@ def process_interaction(
     reply_parts: list[str] = []
     turn_ends = intent_router.ends_turn(user_text)
 
+    # Pull the first reply chunk up front so routing (yt-dlp, radio, etc.)
+    # is not lumped into the TTS timer — and so we can start music ASAP.
+    t0 = time.perf_counter()
+    chunk_iter = iter(chunks)
+    primed: list[str] = []
+    try:
+        primed.append(next(chunk_iter))
+    except StopIteration:
+        pass
+    t_route = time.perf_counter() - t0
+
+    def _reply_chunks():
+        yield from primed
+        yield from chunk_iter
+
+    # Start mpv before the announcement so YouTube can buffer during TTS.
+    # Duck under the short "Playing …" line, then restore.
+    started_music = False
+    if music_client.has_queued_play():
+        started_music = music_client.begin_queued_play()
+        if started_music:
+            turn_ends = True
+            music_client.duck(music_client.DUCK_PERCENT)
+
     t0 = time.perf_counter()
     interrupted = _speak_with_barge_in(
-        _logged_reply_chunks(chunks, reply_parts),
+        _logged_reply_chunks(_reply_chunks(), reply_parts),
         enable_barge_in=ASSISTANT_BARGE_IN and intent_router.allows_barge_in(user_text),
     )
     t_tts = time.perf_counter() - t0
 
-    # Start music only after the spoken announcement, so playback does not
-    # bleed into the mic and trigger another conversational turn.
-    if music_client.begin_queued_play():
-        turn_ends = True
+    if started_music and not interrupted:
+        music_client.unduck()
 
     reply_text = " ".join(reply_parts)
     if reply_text:
@@ -287,8 +309,8 @@ def process_interaction(
 
     log_line(
         log, "Timing",
-        f"record={t_record:.2f}s  stt={t_stt:.2f}s  tts={t_tts:.2f}s  "
-        f"total={time.perf_counter() - t_start:.2f}s",
+        f"record={t_record:.2f}s  stt={t_stt:.2f}s  route={t_route:.2f}s  "
+        f"tts={t_tts:.2f}s  total={time.perf_counter() - t_start:.2f}s",
     )
 
     if interrupted and not turn_ends:

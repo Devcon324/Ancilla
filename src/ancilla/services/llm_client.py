@@ -24,9 +24,10 @@ log = logging.getLogger("assistant.llm")
 
 def _system_prompt() -> str:
     return (
-        f"You are {ASSISTANT_NAME}, a concise voice assistant. Replies are spoken aloud, "
-        "so keep them to 1-2 short sentences, no markdown, no lists. If given factual "
-        "data to relay (weather, hours, search results), state it plainly and naturally."
+        f"You are {ASSISTANT_NAME}, a helpful voice assistant. Replies are spoken aloud, "
+        "so use plain sentences with no markdown, no bullet lists, and no URLs. "
+        "Be specific: include place names, causes, and other concrete facts when you have them. "
+        "For casual chat, keep it brief. For news or explanations, give a clear full answer."
     )
 
 TOOL_SELECT_PROMPT = (
@@ -36,6 +37,13 @@ TOOL_SELECT_PROMPT = (
     "Use answer for general knowledge, jokes, definitions, math, timeless facts, and "
     "anything about you, the assistant, or the person talking to you. "
     "Never use web_search for device controls (volume, music, stop/pause audio)."
+)
+
+SEARCH_QUERY_PROMPT = (
+    "Rewrite the user's message as a short web search query (max 14 words). "
+    "Keep named places and the core topic. Drop conversational filler. "
+    "If they ask what is happening or why, keep words that find the cause. "
+    "Output ONLY the search query, nothing else."
 )
 
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
@@ -54,13 +62,20 @@ def _build_messages(
             names = ", ".join(source_labels)
             system += (
                 f"\nWeb search results:\n{context}\n\n"
-                f"Begin your reply with 'According to [source name],' citing the most "
-                f"relevant source from: {names}. Then answer in 1-2 short spoken sentences."
+                "Answer using these results. Prefer concrete facts: what happened, where, "
+                "who is affected, and why if the sources say. "
+                "Name specific places, people, or numbers when they appear in the results. "
+                "Do not invent facts that are not in the results. "
+                f"Start with 'According to [source],' using the best source from: {names}. "
+                "Then give 3-5 spoken sentences with the useful detail. "
+                "Lead with the cause or main finding, then the local effect. "
+                "Do not just repeat a headline."
             )
         else:
             system += f"\nUse this verified real-time data to answer: {context}"
     messages: list[dict] = [{"role": "system", "content": system}]
-    if history:
+    # Chat history can dilute a 3B model's attention on search facts.
+    if history and not source_labels:
         messages.extend(history)
     messages.append({"role": "user", "content": user_text})
     return messages
@@ -102,6 +117,37 @@ def select_tool(user_text: str, history: list[dict] | None = None) -> str:
     return "answer"
 
 
+def rewrite_search_query(user_text: str) -> str:
+    """Turn a conversational question into a tight DuckDuckGo query."""
+    messages = [
+        {"role": "system", "content": SEARCH_QUERY_PROMPT},
+        {"role": "user", "content": user_text},
+    ]
+    t0 = time.perf_counter()
+    try:
+        response = requests.post(
+            LLAMA_SERVER_URL,
+            json=_chat_payload(messages, max_tokens=24),
+            timeout=10,
+        )
+        response.raise_for_status()
+        query = response.json()["choices"][0]["message"]["content"].strip()
+        query = query.strip("\"'`").splitlines()[0].strip()
+        # Drop accidental "Search query:" prefixes.
+        for prefix in ("search query:", "query:"):
+            if query.lower().startswith(prefix):
+                query = query[len(prefix) :].strip()
+        if 2 <= len(query.split()) <= 16:
+            log_line(
+                log, "LLM",
+                f"search-query -> {query!r} ({time.perf_counter() - t0:.2f}s)",
+            )
+            return query
+    except (requests.RequestException, KeyError, IndexError, TypeError, AttributeError) as exc:
+        log_warn(log, "LLM", f"search-query rewrite failed: {exc}")
+    return user_text
+
+
 def _yield_sentences(buffer: str) -> tuple[list[str], str]:
     """Split buffer on sentence boundaries; return complete sentences and remainder."""
     parts = _SENTENCE_END.split(buffer)
@@ -120,15 +166,18 @@ def ask_stream(
 ) -> Iterator[str]:
     """Stream LLM reply, yielding speakable sentence chunks."""
     ctx = " with web search" if source_labels else (" with context" if context else "")
-    hist = f", {len(history)} prior turn(s)" if history else ""
+    hist = f", {len(history)} prior turn(s)" if history and not source_labels else ""
     if source_labels:
         log_line(log, "LLM", f"sources: {', '.join(source_labels)}")
     log_line(log, "LLM", f"streaming ({LLAMA_MODEL_NAME}){ctx}{hist}")
+    # Search-backed answers need more room than casual chat.
+    max_tokens = 320 if source_labels else 150
     try:
         response = requests.post(
             LLAMA_SERVER_URL,
             json=_chat_payload(
                 _build_messages(user_text, context, history, source_labels=source_labels),
+                max_tokens=max_tokens,
                 stream=True,
             ),
             timeout=60,

@@ -45,10 +45,11 @@ class YoutubeClip:
 
     @property
     def spoken(self) -> str:
-        title = self.title.strip() or "YouTube"
-        if len(title) > 60:
-            title = title[:59].rstrip(" -|,;/") + "…"
-        return f"Playing {title} from YouTube."
+        # Keep this short — long YouTube titles dominate Piper TTS time.
+        title = self.title.strip() or "that"
+        if len(title) > 40:
+            title = title[:39].rstrip(" -|,;/") + "…"
+        return f"Playing {title}."
 
 
 def enabled() -> bool:
@@ -103,15 +104,15 @@ def resolve(query: str) -> YoutubeClip | None:
             cleaned = query
         target = f"ytsearch1:{cleaned}"
 
+    # ytsearch: --flat-playlist skips a full watch-page fetch (~2x faster).
+    cmd = [ytdlp, "--no-playlist", "--skip-download", "-j"]
+    if target.startswith("ytsearch"):
+        cmd.append("--flat-playlist")
+    cmd.append(target)
+
     try:
         proc = subprocess.run(
-            [
-                ytdlp,
-                "--no-playlist",
-                "--skip-download",
-                "-j",
-                target,
-            ],
+            cmd,
             capture_output=True,
             text=True,
             timeout=45,
@@ -137,7 +138,12 @@ def resolve(query: str) -> YoutubeClip | None:
 
     vid = data.get("id")
     title = (data.get("title") or data.get("fulltitle") or query).strip()
-    webpage = data.get("webpage_url") or data.get("original_url") or ""
+    webpage = (
+        data.get("webpage_url")
+        or data.get("original_url")
+        or data.get("url")
+        or ""
+    )
     if "youtube.com" in webpage or "youtu.be" in webpage:
         watch_url = webpage
     elif vid:
